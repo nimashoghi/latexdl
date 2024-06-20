@@ -1,4 +1,5 @@
 import argparse
+import logging
 import re
 import shutil
 import tarfile
@@ -9,6 +10,8 @@ from typing import Any, cast
 import requests
 from TexSoup import TexNode, TexSoup
 from tqdm import tqdm
+
+from .expand import expand_latex_file
 
 
 def _extract_arxiv_id(package: str) -> str:
@@ -147,7 +150,17 @@ def main():
             print(f"Could not find the main LaTeX for ID {arxiv_id} (output: {output})")
             continue
 
-        print("Resolved main LaTeX file:", main_file)
+        logging.info("Resolved main LaTeX file:", main_file)
+
+        # Expand the LaTeX file (i.e., resolve imports into 1 large file)
+        pbar.set_description(f"Expanding {arxiv_id}")
+        expanded_content = expand_latex_file(
+            main_file, root=main_file.parent, imported=set()
+        )
+
+        # Write to root/{arxiv_id}.tex
+        with (output / f"{arxiv_id}.tex").open("w", encoding="utf-8") as f:
+            f.write(repr(expanded_content))
 
 
 if __name__ == "__main__":
