@@ -1,3 +1,8 @@
+[project]
+name = "latexdl"
+version = "0.1.0"
+description = ""
+
 [tool.poetry]
 name = "latexdl"
 version = "0.1.0"
@@ -23,4 +28,7 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
+latexdl = "latexdl.main:main"
+
+[project.scripts]
 latexdl = "latexdl.main:main"
