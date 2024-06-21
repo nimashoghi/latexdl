@@ -870,15 +870,19 @@ files = [
 ]
 
 [[package]]
-name = "texsoup"
+name = "TexSoup"
 version = "0.3.1"
 description = "parses valid LaTeX and provides variety of Beautiful-Soup-esque methods and Pythonic idioms for iterating over and searching the parse tree"
 optional = false
 python-versions = "*"
-files = [
-    {file = "TexSoup-0.3.1-py3-none-any.whl", hash = "sha256:ae8f08d17f86a905b7c2ce01c9f2da613fbca0bcea78c71d727719e896045bed"},
-    {file = "TexSoup-0.3.1.tar.gz", hash = "sha256:3f6b2ad0abe3688a6656f544c1ba04d0eb25f423f8c377b7369f9ce061ddb70b"},
-]
+files = []
+develop = false
+
+[package.source]
+type = "git"
+url = "https://github.com/alvinwan/TexSoup.git"
+reference = "HEAD"
+resolved_reference = "448c89c3df614b418eb11201fba8da339cdf7559"
 
 [[package]]
 name = "tornado"
@@ -977,4 +981,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.7"
-content-hash = "bc9ad3b118c7b17f06720b0a9dd70b92511fb9ca9fa4127c144d14e72ddd6fea"
+content-hash = "00003210b19262f8016984e70ca0d3b1a25840cc9a194f834b4ff2a39e2e6a57"
