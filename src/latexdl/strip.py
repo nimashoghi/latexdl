@@ -1,10 +1,9 @@
 import argparse
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
 
 from TexSoup import TexNode, TexSoup
-from TexSoup.data import TexCmd, TexEnv, TexExpr, TexGroup, TexNamedEnv, TexText
+from TexSoup.data import TexCmd, TexExpr, TexNamedEnv, TexText
 from TexSoup.utils import TC, Token
 
 
@@ -108,12 +107,30 @@ def _strip_clutter(node: TexExpr):
     return _recurse(node, child_fn)
 
 
+def _seek_to_document_node(node: TexExpr):
+    for child in node.all:
+        # If the child isn't a TexExpr, this is a leaf node. Continue.
+        if not isinstance(child, TexExpr):
+            continue
+
+        # If this is a document node, return it
+        if isinstance(child, TexNamedEnv) and child.name == "document":
+            return child
+
+        # Recurse on all the children
+        if (result := _seek_to_document_node(child)) is not None:
+            return result
+
+    return None
+
+
 def strip(
     node: TexNode,
     *,
     strip_comments: bool = True,
     strip_whitespace: bool = True,
     strip_clutter: bool = True,
+    seek_to_document_node: bool = True,
 ):
     if strip_whitespace:
         node = TexNode(_strip_whitespace(node.expr))
@@ -121,6 +138,12 @@ def strip(
         node = TexNode(_strip_comments(node.expr))
     if strip_clutter:
         node = TexNode(_strip_clutter(node.expr))
+
+    if (
+        seek_to_document_node
+        and (document := _seek_to_document_node(node.expr)) is not None
+    ):
+        node = TexNode(document)
     return node
 
 
@@ -149,7 +172,7 @@ def main():
 
     # Resolve the input file
     input: Path = args.input
-    resolved = repr(
+    resolved = str(
         strip(
             TexSoup(input.read_text(encoding="utf-8")),
             strip_comments=args.strip_comments,

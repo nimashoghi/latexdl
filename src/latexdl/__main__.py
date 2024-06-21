@@ -5,10 +5,8 @@ import shutil
 import tarfile
 import urllib.parse
 from pathlib import Path
-from typing import Any, cast
 
 import requests
-from TexSoup import TexNode, TexSoup
 from tqdm import tqdm
 
 from .expand import expand_latex_file
@@ -198,7 +196,7 @@ def main():
         output_file_path = output_base / f"{arxiv_id}.tex"
         pbar.set_description(f"Writing {arxiv_id} to {output_file_path}")
         with output_file_path.open("w", encoding="utf-8") as f:
-            f.write(repr(latex_root))
+            f.write(str(latex_root))
 
 
 if __name__ == "__main__":
