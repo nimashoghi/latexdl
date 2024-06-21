@@ -145,6 +145,12 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument(
+        "--force-overwrite",
+        help="Force overwrite of existing files",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
     args = parser.parse_args()
 
     output_base: Path = args.output
@@ -166,7 +172,8 @@ def main():
 
             print(f"Output path {output} already exists")
             if (
-                input(
+                not args.force_overwrite
+                and input(
                     "Do you want to overwrite it? This will remove all files in the directory. [y/N] "
                 ).lower()
                 != "y"
