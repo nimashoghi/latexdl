@@ -5,17 +5,37 @@ from typing import Any, cast
 from TexSoup import TexNode, TexSoup
 
 
-def expand_latex_file(f: Path, *, root: Path, imported: set[Path]):
+def _resolve_file(f: Path):
+    if f.exists():
+        # If the file is not a tex file, return None
+        if f.suffix != ".tex":
+            return None
+
+        return f
+
+    # If the file doesn't exist, try adding the .tex extension
+    f = f.with_suffix(".tex")
+    if f.exists():
+        return f
+
+    return None
+
+
+def expand_latex_file(f_in: Path, *, root: Path, imported: set[Path]):
     """Resolve all imports and update the parse tree.
 
     Reads from a tex file and once finished, writes to a tex file.
     """
+    if (f := _resolve_file(f_in)) is None:
+        return TexSoup("")
+
+    f_abs = f.absolute()
     # If we've already imported this file, return an empty node
-    if f.absolute() in imported:
+    if f_abs in imported:
         return TexSoup("")
 
     # Otherwise, add this file to the set of imported files
-    imported.add(f.absolute())
+    imported.add(f_abs)
 
     # Read the file and resolve imports.
     soup = TexSoup(f.read_text(encoding="utf-8"))
