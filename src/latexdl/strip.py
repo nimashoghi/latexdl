@@ -1,5 +1,7 @@
 import argparse
 import enum
+import functools
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
@@ -16,28 +18,51 @@ class RecurseAction(enum.Enum):
 
 
 def _recurse(
-    node: TexExpr,
+    expr: TexExpr,
     child_fn: Callable[[TexExpr, TexExpr], RecurseAction],
 ):
-    for child in node.all:
-        # If the child isn't a TexExpr, this is a leaf node. Continue.
-        if not isinstance(child, TexExpr):
-            continue
+    try:
+        # First, take a pass through the arguments (which is a list)
+        for i, arg in enumerate(expr.args):
+            arg_actions = {
+                child_fn(child_expr, expr)
+                for child_expr in arg.contents
+                if isinstance(child_expr, TexExpr)
+            }
 
-        match child_fn(child, node):
-            case RecurseAction.REMOVE:
-                node.remove(child)
-            case RecurseAction.SKIP:
+            if RecurseAction.REMOVE in arg_actions:
+                # Remove the arg from the list
+                expr.args.pop(i)
                 continue
-            case RecurseAction.CONTINUE:
-                _recurse(child, child_fn)
-            case _action:
-                assert_never(_action)
+            elif RecurseAction.SKIP in arg_actions:
+                continue
+            else:
+                # Recurse on the arg
+                _recurse(arg, child_fn)
 
-    return node
+        # Next, take a pass through the contents
+        for child in expr._contents:
+            # If the child isn't a TexExpr, this is a leaf node. Continue.
+            if not isinstance(child, TexExpr):
+                continue
+
+            match child_fn(child, expr):
+                case RecurseAction.REMOVE:
+                    expr.remove(child)
+                case RecurseAction.SKIP:
+                    continue
+                case RecurseAction.CONTINUE:
+                    _recurse(child, child_fn)
+                case _action:
+                    assert_never(_action)
+    except Exception as e:
+        logging.error(f"Error while recursing through {expr}. Skipping. Error: {e}")
+        return expr
+
+    return expr
 
 
-def _strip_whitespace(node: TexExpr):
+def _strip_whitespace_(expr: TexExpr):
     def child_fn(child: TexExpr, parent: TexExpr):
         # If this is not a text node (or the node is marked to preserve whitespace), ignore.
         if not isinstance(child, TexText) or child.preserve_whitespace:
@@ -50,10 +75,10 @@ def _strip_whitespace(node: TexExpr):
 
         return RecurseAction.CONTINUE
 
-    return _recurse(node, child_fn)
+    return _recurse(expr, child_fn)
 
 
-def _strip_comments(node: TexExpr):
+def _strip_comments_(expr: TexExpr):
     def child_fn(child: TexExpr, parent: TexExpr):
         # If this is not a text node, ignore.
         if not isinstance(child, TexText):
@@ -66,10 +91,10 @@ def _strip_comments(node: TexExpr):
 
         return RecurseAction.CONTINUE
 
-    return _recurse(node, child_fn)
+    return _recurse(expr, child_fn)
 
 
-def _strip_clutter(node: TexExpr):
+def _strip_clutter_(expr: TexExpr):
     CLUTTER_ENVS = {
         "figure",
         "figure*",
@@ -86,6 +111,9 @@ def _strip_clutter(node: TexExpr):
         "wrapfloat*",
         "wrapfigure*",
         "wraptable*",
+        "center",
+        "flushleft",
+        "flushright",
         # tikz
         "tikzpicture",
         "pgfpicture",
@@ -106,11 +134,11 @@ def _strip_clutter(node: TexExpr):
 
         return RecurseAction.CONTINUE
 
-    return _recurse(node, child_fn)
+    return _recurse(expr, child_fn)
 
 
-def _seek_to_document_node(node: TexExpr):
-    for child in node.all:
+def _seek_to_document_node(expr: TexExpr):
+    for child in expr.all:
         # If the child isn't a TexExpr, this is a leaf node. Continue.
         if not isinstance(child, TexExpr):
             continue
@@ -134,12 +162,12 @@ def strip(
     strip_clutter: bool = True,
     seek_to_document_node: bool = True,
 ):
-    if strip_whitespace:
-        node = TexNode(_strip_whitespace(node.expr))
     if strip_comments:
-        node = TexNode(_strip_comments(node.expr))
+        _strip_comments_(node.expr)
+    if strip_whitespace:
+        _strip_whitespace_(node.expr)
     if strip_clutter:
-        node = TexNode(_strip_clutter(node.expr))
+        _strip_clutter_(node.expr)
 
     if (
         seek_to_document_node
