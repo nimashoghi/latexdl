@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from TexSoup import TexNode, TexSoup
-from TexSoup.data import TexExpr, TexGroup, TexText
+from TexSoup.data import TexCmd, TexEnv, TexExpr, TexGroup, TexNamedEnv, TexText
+from TexSoup.utils import TC, Token
 
 
 def _recurse(
@@ -28,7 +29,7 @@ def _recurse(
 
 def _strip_whitespace(node: TexExpr):
     def child_fn(child: TexExpr, parent: TexExpr):
-        # If this is the root node or is not a text node, ignore.
+        # If this is not a text node, ignore.
         if not isinstance(child, TexText):
             return child
 
@@ -47,13 +48,13 @@ def _strip_whitespace(node: TexExpr):
 
 def _strip_comments(node: TexExpr):
     def child_fn(child: TexExpr, parent: TexExpr):
-        # If this is the root node or is not a text node, ignore.
+        # If this is not a text node, ignore.
         if not isinstance(child, TexText):
             return child
 
         # If this is not a comment node, ignore.
-        content = child._text.strip()
-        if not content.startswith("%"):
+        content = child._text
+        if not isinstance(content, Token) or content.category != TC.Comment:
             return child
 
         # Otherwise, remove the node
@@ -63,16 +64,63 @@ def _strip_comments(node: TexExpr):
     return _recurse(node, child_fn)
 
 
+def _strip_clutter(node: TexExpr):
+    CLUTTER_ENVS = {
+        "figure",
+        "figure*",
+        "table",
+        "table*",
+        "tabular",
+        "tabular*",
+        "tabularx",
+        "tabu",
+        "longtable",
+        "wraptable",
+        "wrapfigure",
+        "wrapfloat",
+        "wrapfloat*",
+        "wrapfigure*",
+        "wraptable*",
+        # tikz
+        "tikzpicture",
+        "pgfpicture",
+    }
+
+    def child_fn(child: TexExpr, parent: TexExpr):
+        # Remove clutter environments, e.g., figures and tables
+        if isinstance(child, TexNamedEnv) and child.name in CLUTTER_ENVS:
+            print(f"Removing {child} environment")
+            parent.remove(child)
+            return None
+
+        # Remove custom command declarations, e.g., \newcommand, \renewcommand, \def, etc.
+        if isinstance(child, TexCmd) and child.name in {
+            "newcommand",
+            "renewcommand",
+            "def",
+        }:
+            print(f"Removing {child} command")
+            parent.remove(child)
+            return None
+
+        return child
+
+    return _recurse(node, child_fn)
+
+
 def strip(
     node: TexNode,
     *,
     strip_comments: bool = True,
     strip_whitespace: bool = True,
+    strip_clutter: bool = True,
 ):
     if strip_whitespace:
         node = TexNode(_strip_whitespace(node.expr))
     if strip_comments:
         node = TexNode(_strip_comments(node.expr))
+    if strip_clutter:
+        node = TexNode(_strip_clutter(node.expr))
     return node
 
 
