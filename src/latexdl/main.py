@@ -190,7 +190,7 @@ def main():
             print(f"Could not find the main LaTeX for ID {arxiv_id} (output: {output})")
             continue
 
-        logging.info("Resolved main LaTeX file:", main_file)
+        print("Resolved main LaTeX file:", main_file)
 
         # Expand the LaTeX file (i.e., resolve imports into 1 large file)
         pbar.set_description(f"Expanding {arxiv_id}")
