@@ -40,18 +40,27 @@ def _extract_arxiv_id(package: str) -> str:
     return arxiv_id
 
 
-def _download_and_extract(arxiv_id: str, output: Path):
+def _download_and_extract(
+    arxiv_id: str,
+    output: Path,
+    redownload_existing: bool = False,
+):
+    fpath = output / f"{arxiv_id}.tar.gz"
+    if fpath.exists() and not redownload_existing:
+        logging.info(f"Package {arxiv_id} already downloaded, skipping")
+        return
+
     url = f"https://arxiv.org/src/{arxiv_id}"
     response = requests.get(url, stream=True)
     response.raise_for_status()
 
     # Save the response to a file
-    with (output / f"{arxiv_id}.tar.gz").open("wb") as f:
+    with fpath.open("wb") as f:
         for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
 
     # Extract the tarball
-    with tarfile.open(output / f"{arxiv_id}.tar.gz", "r:gz") as tar:
+    with tarfile.open(fpath, "r:gz") as tar:
         tar.extractall(output)
 
 
@@ -120,6 +129,12 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument(
+        "--redownload-existing",
+        help="Redownload existing packages",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
     args = parser.parse_args()
 
     output_base: Path = args.output
@@ -156,7 +171,9 @@ def main():
 
         # Download and extract the package
         pbar.set_description(f"Downloading {arxiv_id}")
-        _download_and_extract(arxiv_id, output)
+        _download_and_extract(
+            arxiv_id, output, redownload_existing=args.redownload_existing
+        )
 
         # Find the main LaTeX file in the extracted directory
         if (main_file := _find_main_latex_file(output)) is None:

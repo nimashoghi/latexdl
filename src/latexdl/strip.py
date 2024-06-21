@@ -3,51 +3,52 @@ from pathlib import Path
 from typing import Any, cast
 
 from TexSoup import TexNode, TexSoup
-from TexSoup.data import TexGroup, TexText
+from TexSoup.data import TexExpr, TexGroup, TexText
 
 
-def _recursively_strip_whitespace(node: TexNode):
+def _recursively_strip_whitespace(node: TexExpr):
     for child in node.all:
         # If this is a TexGroup, recurse
-        if isinstance(child.expr, TexGroup):
-            _recursively_strip_comments(child)
+        if isinstance(child, TexGroup):
+            child = _recursively_strip_whitespace(child)
             continue
 
         # If this is the root node or is not a text node, ignore.
-        if child.parent is None or not isinstance(child.expr, TexText):
+        if not isinstance(child, TexText):
             continue
 
         # If this is not a whitespace node, or if the node is marked to preserve whitespace, ignore.
-        content = child.expr._text
+        content = child._text
         is_whitespace = isinstance(content, str) and content.isspace()
-        if not is_whitespace or child.expr.preserve_whitespace:
+        if not is_whitespace or child.preserve_whitespace:
             continue
 
         # Otherwise, remove the node
-        child.parent.remove(child)
+        print(f'Removing whitespace node "{content}"')
+        node.remove(child)
 
     return node
 
 
-def _recursively_strip_comments(node: TexNode):
+def _recursively_strip_comments(node: TexExpr):
     for child in node.all:
         # If this is a TexGroup, recurse
-        if isinstance(child.expr, TexGroup):
-            _recursively_strip_comments(child)
+        if isinstance(child, TexGroup):
+            child = _recursively_strip_comments(child)
             continue
 
         # If this is the root node or is not a text node, ignore.
-        if child.parent is None or not isinstance(child.expr, TexText):
+        if not isinstance(child, TexText):
             continue
 
         # If this is not a comment node, ignore.
-        content = child.expr._text.strip()
-        print(content)
+        content = child._text.strip()
         if not content.startswith("%"):
             continue
 
         # Otherwise, remove the node
-        child.parent.remove(child)
+        print(f'Removing comment node "{content}"')
+        node.remove(child)
 
     return node
 
@@ -59,9 +60,9 @@ def strip(
     strip_whitespace: bool = True,
 ):
     if strip_whitespace:
-        node = _recursively_strip_whitespace(node)
+        node = TexNode(_recursively_strip_whitespace(node.expr))
     if strip_comments:
-        node = _recursively_strip_comments(node)
+        node = TexNode(_recursively_strip_comments(node.expr))
     return node
 
 
