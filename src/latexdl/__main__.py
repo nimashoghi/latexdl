@@ -12,6 +12,7 @@ from TexSoup import TexNode, TexSoup
 from tqdm import tqdm
 
 from .expand import expand_latex_file
+from .strip import strip
 
 
 def _extract_arxiv_id(package: str) -> str:
@@ -107,6 +108,18 @@ def main():
         type=Path,
         default=Path.cwd(),
     )
+    parser.add_argument(
+        "--strip-comments",
+        help="Strip comments",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--strip-whitespace",
+        help="Strip whitespace",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     args = parser.parse_args()
 
     output_base: Path = args.output
@@ -154,13 +167,21 @@ def main():
 
         # Expand the LaTeX file (i.e., resolve imports into 1 large file)
         pbar.set_description(f"Expanding {arxiv_id}")
-        expanded_content = expand_latex_file(
-            main_file, root=main_file.parent, imported=set()
+        latex_root = expand_latex_file(main_file, root=main_file.parent, imported=set())
+
+        # Strip comments and whitespace
+        pbar.set_description(f"Stripping {arxiv_id}")
+        latex_root = strip(
+            latex_root,
+            strip_comments=args.strip_comments,
+            strip_whitespace=args.strip_whitespace,
         )
 
         # Write to root/{arxiv_id}.tex
-        with (output / f"{arxiv_id}.tex").open("w", encoding="utf-8") as f:
-            f.write(repr(expanded_content))
+        output_file_path = output_base / f"{arxiv_id}.tex"
+        pbar.set_description(f"Writing {arxiv_id} to {output_file_path}")
+        with output_file_path.open("w", encoding="utf-8") as f:
+            f.write(repr(latex_root))
 
 
 if __name__ == "__main__":

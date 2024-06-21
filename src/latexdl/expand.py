@@ -32,7 +32,7 @@ def expand_latex_file(f: Path, *, root: Path, imported: set[Path]):
                 continue
 
             node.replace_with(
-                expand_latex_file(f.parent / arg, root=root, imported=imported)
+                expand_latex_file(f.parent / arg, root=root, imported=imported).expr
             )
 
     # Resolve imports, e.g., \import{dir/}{file.tex}
@@ -46,7 +46,7 @@ def expand_latex_file(f: Path, *, root: Path, imported: set[Path]):
             continue
 
         import_.replace_with(
-            expand_latex_file(root / (arg1 + arg2), root=root, imported=imported)
+            expand_latex_file(root / (arg1 + arg2), root=root, imported=imported).expr
         )
 
     # Resolve subimports, e.g., \subimport{dir/}{file.tex}
@@ -61,7 +61,9 @@ def expand_latex_file(f: Path, *, root: Path, imported: set[Path]):
             continue
 
         subimport.replace_with(
-            expand_latex_file(f.parent / (arg1 + arg2), root=root, imported=imported)
+            expand_latex_file(
+                f.parent / (arg1 + arg2), root=root, imported=imported
+            ).expr
         )
 
     return soup
