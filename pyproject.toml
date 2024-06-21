@@ -10,7 +10,7 @@ python = "^3.7"
 arxiv = "^2.1.0"
 tqdm = "^4.66.4"
 requests = "*"
-texsoup = {git = "https://github.com/alvinwan/TexSoup.git"}
+texsoup = { git = "https://github.com/JCGoran/TexSoup.git", branch = "fix/special_commands" }
 
 
 [tool.poetry.group.dev.dependencies]

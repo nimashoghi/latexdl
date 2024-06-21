@@ -880,9 +880,9 @@ develop = false
 
 [package.source]
 type = "git"
-url = "https://github.com/alvinwan/TexSoup.git"
-reference = "HEAD"
-resolved_reference = "448c89c3df614b418eb11201fba8da339cdf7559"
+url = "https://github.com/JCGoran/TexSoup.git"
+reference = "fix/special_commands"
+resolved_reference = "fc895b351cf3c54eea9b67c248f3e357e53a4485"
 
 [[package]]
 name = "tornado"
@@ -981,4 +981,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.7"
-content-hash = "00003210b19262f8016984e70ca0d3b1a25840cc9a194f834b4ff2a39e2e6a57"
+content-hash = "2f5853f498ded1af04808ef5d832c82fd8eee75e1eb62fa8308b9de10175157f"
