@@ -128,6 +128,18 @@ def main():
         default=True,
     )
     parser.add_argument(
+        "--strip-clutter",
+        help="Strip clutter",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--seek-to-document",
+        help="Seek to the document node",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
         "--redownload-existing",
         help="Redownload existing packages",
         action=argparse.BooleanOptionalAction,
@@ -190,6 +202,8 @@ def main():
             latex_root,
             strip_comments=args.strip_comments,
             strip_whitespace=args.strip_whitespace,
+            strip_clutter=args.strip_clutter,
+            seek_to_document_node=args.seek_to_document,
         )
 
         # Write to root/{arxiv_id}.tex

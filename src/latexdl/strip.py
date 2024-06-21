@@ -88,7 +88,6 @@ def _strip_clutter(node: TexExpr):
     def child_fn(child: TexExpr, parent: TexExpr):
         # Remove clutter environments, e.g., figures and tables
         if isinstance(child, TexNamedEnv) and child.name in CLUTTER_ENVS:
-            print(f"Removing {child} environment")
             parent.remove(child)
             return None
 
@@ -98,7 +97,6 @@ def _strip_clutter(node: TexExpr):
             "renewcommand",
             "def",
         }:
-            print(f"Removing {child} command")
             parent.remove(child)
             return None
 
@@ -163,6 +161,18 @@ def main():
         default=True,
     )
     parser.add_argument(
+        "--clutter",
+        help="Strip clutter",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
+        "--seek-to-document",
+        help="Seek to the document node",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument(
         "--output",
         help="Output LaTeX file. If not provided, the output is printed to stdout.",
         type=Path,
@@ -175,8 +185,10 @@ def main():
     resolved = str(
         strip(
             TexSoup(input.read_text(encoding="utf-8")),
-            strip_comments=args.strip_comments,
-            strip_whitespace=args.strip_whitespace,
+            strip_comments=args.comments,
+            strip_whitespace=args.whitespace,
+            strip_clutter=args.clutter,
+            seek_to_document_node=args.seek_to_document,
         )
     )
 
