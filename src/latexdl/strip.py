@@ -1,46 +1,54 @@
 import argparse
+import enum
 from collections.abc import Callable
 from pathlib import Path
 
 from TexSoup import TexNode, TexSoup
 from TexSoup.data import TexCmd, TexExpr, TexNamedEnv, TexText
 from TexSoup.utils import TC, Token
+from typing_extensions import assert_never
+
+
+class RecurseAction(enum.Enum):
+    CONTINUE = enum.auto()
+    SKIP = enum.auto()
+    REMOVE = enum.auto()
 
 
 def _recurse(
     node: TexExpr,
-    child_fn: Callable[[TexExpr, TexExpr], TexExpr | None],
+    child_fn: Callable[[TexExpr, TexExpr], RecurseAction],
 ):
     for child in node.all:
         # If the child isn't a TexExpr, this is a leaf node. Continue.
         if not isinstance(child, TexExpr):
             continue
 
-        # Call the child function. If it returns None, continue.
-        if (child := child_fn(child, node)) is None:
-            continue
-
-        # Recurse on all the children
-        _recurse(child, child_fn)
+        match child_fn(child, node):
+            case RecurseAction.REMOVE:
+                node.remove(child)
+            case RecurseAction.SKIP:
+                continue
+            case RecurseAction.CONTINUE:
+                _recurse(child, child_fn)
+            case _action:
+                assert_never(_action)
 
     return node
 
 
 def _strip_whitespace(node: TexExpr):
     def child_fn(child: TexExpr, parent: TexExpr):
-        # If this is not a text node, ignore.
-        if not isinstance(child, TexText):
-            return child
+        # If this is not a text node (or the node is marked to preserve whitespace), ignore.
+        if not isinstance(child, TexText) or child.preserve_whitespace:
+            return RecurseAction.CONTINUE
 
-        # If this is not a whitespace node, or if the node is marked to preserve whitespace, ignore.
+        # If this is a whitespace node, remove it
         content = child._text
-        is_whitespace = isinstance(content, str) and content.isspace()
-        if not is_whitespace or child.preserve_whitespace:
-            return child
+        if isinstance(content, str) and content.isspace():
+            return RecurseAction.REMOVE
 
-        # Otherwise, remove the node
-        parent.remove(child)
-        return None
+        return RecurseAction.CONTINUE
 
     return _recurse(node, child_fn)
 
@@ -49,16 +57,14 @@ def _strip_comments(node: TexExpr):
     def child_fn(child: TexExpr, parent: TexExpr):
         # If this is not a text node, ignore.
         if not isinstance(child, TexText):
-            return child
+            return RecurseAction.CONTINUE
 
-        # If this is not a comment node, ignore.
+        # If this is a comment node, remove it
         content = child._text
-        if not isinstance(content, Token) or content.category != TC.Comment:
-            return child
+        if isinstance(content, Token) and content.category == TC.Comment:
+            return RecurseAction.REMOVE
 
-        # Otherwise, remove the node
-        parent.remove(child)
-        return None
+        return RecurseAction.CONTINUE
 
     return _recurse(node, child_fn)
 
@@ -88,8 +94,7 @@ def _strip_clutter(node: TexExpr):
     def child_fn(child: TexExpr, parent: TexExpr):
         # Remove clutter environments, e.g., figures and tables
         if isinstance(child, TexNamedEnv) and child.name in CLUTTER_ENVS:
-            parent.remove(child)
-            return None
+            return RecurseAction.REMOVE
 
         # Remove custom command declarations, e.g., \newcommand, \renewcommand, \def, etc.
         if isinstance(child, TexCmd) and child.name in {
@@ -97,10 +102,9 @@ def _strip_clutter(node: TexExpr):
             "renewcommand",
             "def",
         }:
-            parent.remove(child)
-            return None
+            return RecurseAction.REMOVE
 
-        return child
+        return RecurseAction.CONTINUE
 
     return _recurse(node, child_fn)
 

@@ -13,6 +13,7 @@ requests = "*"
 texsoup = { git = "https://github.com/JCGoran/TexSoup.git", branch = "fix/special_commands" }
 
 
+typing-extensions = "*"
 [tool.poetry.group.dev.dependencies]
 ipykernel = "*"
 rich = "*"
