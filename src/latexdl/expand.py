@@ -1,5 +1,5 @@
 import argparse
-import fileinput
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -155,7 +155,7 @@ def main():
         )
     else:
         resolved = expand_latex_file(
-            lambda: "".join(fileinput.input()),
+            lambda: sys.stdin.read(),
             "<stdin>",
             Path.cwd(),
             root=Path.cwd(),

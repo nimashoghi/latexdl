@@ -1,7 +1,7 @@
 import argparse
 import enum
-import fileinput
 import logging
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -218,11 +218,7 @@ def main():
     args = parser.parse_args()
 
     # Resolve the input file
-    content = (
-        args.input.read_text(encoding="utf-8")
-        if args.input
-        else "".join(fileinput.input())
-    )
+    content = args.input.read_text(encoding="utf-8") if args.input else sys.stdin.read()
 
     resolved = str(
         strip(
