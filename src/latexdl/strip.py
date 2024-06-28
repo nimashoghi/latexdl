@@ -1,6 +1,6 @@
 import argparse
 import enum
-import functools
+import fileinput
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -179,7 +179,12 @@ def strip(
 
 def main():
     parser = argparse.ArgumentParser(description="Expand LaTeX files")
-    parser.add_argument("input", help="Input LaTeX file", type=Path)
+    parser.add_argument(
+        "input",
+        help="Input LaTeX file. If not provided, the stdin is used.",
+        type=Path,
+        nargs="?",
+    )
     parser.add_argument(
         "--comments",
         help="Strip comments",
@@ -213,10 +218,15 @@ def main():
     args = parser.parse_args()
 
     # Resolve the input file
-    input: Path = args.input
+    content = (
+        args.input.read_text(encoding="utf-8")
+        if args.input
+        else "".join(fileinput.input())
+    )
+
     resolved = str(
         strip(
-            TexSoup(input.read_text(encoding="utf-8")),
+            TexSoup(content),
             strip_comments=args.comments,
             strip_whitespace=args.whitespace,
             strip_clutter=args.clutter,

@@ -1,4 +1,6 @@
 import argparse
+import fileinput
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -21,24 +23,31 @@ def _resolve_file(f: Path):
     return None
 
 
-def expand_latex_file(f_in: Path, *, root: Path, imported: set[Path]):
+def _file_to_args(f: Path) -> tuple[Callable[[], str], str, Path]:
+    return lambda: f.read_text(encoding="utf-8"), str(f.absolute()), f.parent
+
+
+def expand_latex_file(
+    contents: Callable[[], str],
+    key: str,
+    f_dir: Path,
+    *,
+    root: Path,
+    imported: set[str],
+):
     """Resolve all imports and update the parse tree.
 
     Reads from a tex file and once finished, writes to a tex file.
     """
-    if (f := _resolve_file(f_in)) is None:
-        return TexSoup("")
-
-    f_abs = f.absolute()
     # If we've already imported this file, return an empty node
-    if f_abs in imported:
+    if key in imported:
         return TexSoup("")
 
     # Otherwise, add this file to the set of imported files
-    imported.add(f_abs)
+    imported.add(key)
 
     # Read the file and resolve imports.
-    soup = TexSoup(f.read_text(encoding="utf-8"))
+    soup = TexSoup(contents())
 
     # Resolve input and include commands (e.g., \input{file.tex})
     # (as far as we're concerned, they're the same).
@@ -51,8 +60,16 @@ def expand_latex_file(f_in: Path, *, root: Path, imported: set[Path]):
             if not isinstance(arg, str):
                 continue
 
+            # node.replace_with(
+            #     expand_latex_file(f_dir / arg, root=root, imported=imported).expr
+            # )
+
+            if (new_file := _resolve_file(f_dir / arg)) is None:
+                continue
             node.replace_with(
-                expand_latex_file(f.parent / arg, root=root, imported=imported).expr
+                expand_latex_file(
+                    *_file_to_args(new_file), root=root, imported=imported
+                ).expr
             )
 
     # Resolve imports, e.g., \import{dir/}{file.tex}
@@ -65,8 +82,17 @@ def expand_latex_file(f_in: Path, *, root: Path, imported: set[Path]):
         if not isinstance(arg1, str) or not isinstance(arg2, str):
             continue
 
+        # import_.replace_with(
+        #     expand_latex_file(root / (arg1 + arg2), root=root, imported=imported).expr
+        # )
+
+        if (new_file := _resolve_file(root / arg1 / arg2)) is None:
+            continue
+
         import_.replace_with(
-            expand_latex_file(root / (arg1 + arg2), root=root, imported=imported).expr
+            expand_latex_file(
+                *_file_to_args(new_file), root=root, imported=imported
+            ).expr
         )
 
     # Resolve subimports, e.g., \subimport{dir/}{file.tex}
@@ -80,24 +106,32 @@ def expand_latex_file(f_in: Path, *, root: Path, imported: set[Path]):
         if not isinstance(arg1, str) or not isinstance(arg2, str):
             continue
 
+        # subimport.replace_with(
+        #     expand_latex_file(
+        #         f_dir / (arg1 + arg2), root=root, imported=imported
+        #     ).expr
+        # )
+
+        if (new_file := _resolve_file(f_dir / arg1 / arg2)) is None:
+            continue
+
         subimport.replace_with(
             expand_latex_file(
-                f.parent / (arg1 + arg2), root=root, imported=imported
+                *_file_to_args(new_file), root=root, imported=imported
             ).expr
         )
 
     return soup
 
 
-def latexpand(f: Path, root: Path | None = None):
-    if root is None:
-        root = f.parent
-    return str(expand_latex_file(f, root=root, imported=set()))
-
-
 def main():
     parser = argparse.ArgumentParser(description="Expand LaTeX files")
-    parser.add_argument("input", help="Input LaTeX file", type=Path)
+    parser.add_argument(
+        "input",
+        help="Input LaTeX file. If not provided, the stdin is used.",
+        type=Path,
+        nargs="?",
+    )
     parser.add_argument(
         "--output",
         help="Output LaTeX file. If not provided, the output is printed to stdout.",
@@ -107,7 +141,24 @@ def main():
     args = parser.parse_args()
 
     # Resolve the input file
-    resolved = latexpand(args.input)
+    if args.input:
+        resolved = str(
+            expand_latex_file(
+                *_file_to_args(args.input),
+                root=args.input.parent,
+                imported=set(),
+            )
+        )
+    else:
+        resolved = str(
+            expand_latex_file(
+                lambda: "".join(fileinput.input()),
+                "<stdin>",
+                Path.cwd(),
+                root=Path.cwd(),
+                imported=set(),
+            )
+        )
 
     # Write the output
     if args.output:

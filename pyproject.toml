@@ -25,3 +25,5 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 latexdl = "latexdl.main:main"
+latexdl-expand = "latexdl.expand:main"
+latexdl-strip = "latexdl.strip:main"
