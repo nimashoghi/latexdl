@@ -133,6 +133,12 @@ def main():
         nargs="?",
     )
     parser.add_argument(
+        "--strip",
+        help="Strip comments, whitespace, and clutter",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument(
         "--output",
         help="Output LaTeX file. If not provided, the output is printed to stdout.",
         type=Path,
@@ -142,23 +148,26 @@ def main():
 
     # Resolve the input file
     if args.input:
-        resolved = str(
-            expand_latex_file(
-                *_file_to_args(args.input),
-                root=args.input.parent,
-                imported=set(),
-            )
+        resolved = expand_latex_file(
+            *_file_to_args(args.input),
+            root=args.input.parent,
+            imported=set(),
         )
     else:
-        resolved = str(
-            expand_latex_file(
-                lambda: "".join(fileinput.input()),
-                "<stdin>",
-                Path.cwd(),
-                root=Path.cwd(),
-                imported=set(),
-            )
+        resolved = expand_latex_file(
+            lambda: "".join(fileinput.input()),
+            "<stdin>",
+            Path.cwd(),
+            root=Path.cwd(),
+            imported=set(),
         )
+
+    if args.strip:
+        from .strip import strip
+
+        resolved = strip(resolved)
+
+    resolved = str(resolved)
 
     # Write the output
     if args.output:
