@@ -180,10 +180,10 @@ def strip(
 def main():
     parser = argparse.ArgumentParser(description="Expand LaTeX files")
     parser.add_argument(
-        "input",
+        "--input",
         help="Input LaTeX file. If not provided, the stdin is used.",
         type=Path,
-        nargs="?",
+        required=False,
     )
     parser.add_argument(
         "--comments",
