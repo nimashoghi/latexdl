@@ -106,6 +106,8 @@ def _find_main_latex_file(directory: Path) -> Path | None:
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
+
     parser = argparse.ArgumentParser(description="Download LaTeX packages")
     parser.add_argument("packages", nargs="+", help="Packages to download", type=str)
     parser.add_argument(
@@ -167,24 +169,30 @@ def main():
         output = output_base / arxiv_id
         # If the package dir exists, prompt the user
         if output.exists():
+            logging.info(f"Output path {output} already exists")
             if not output.is_dir():
                 raise ValueError(f"Output path {output} is not a directory")
 
-            print(f"Output path {output} already exists")
-            if (
-                not args.force_overwrite
-                and input(
-                    "Do you want to overwrite it? This will remove all files in the directory. [y/N] "
-                ).lower()
-                != "y"
-            ):
+            if args.force_overwrite:
+                # Remove the directory
+                logging.warning(f"Removing {output} because of --force-overwrite")
+                shutil.rmtree(output)
                 continue
 
-            # Remove the directory
-            shutil.rmtree(output)
+            # Otherwise, ask the user
+            print(f"Output path {output} already exists")
+            resp = input(
+                "Do you want to overwrite it? This will remove all files in the directory. [y/N] "
+            ).lower()
+            if resp == "y":
+                logging.warning(f"Removing {output}")
+                shutil.rmtree(output)
+                continue
+
+            logging.warning(f"Skipping {arxiv_id}")
 
         # Create the directory
-        output.mkdir(parents=True)
+        output.mkdir(parents=True, exist_ok=True)
 
         # Download and extract the package
         pbar.set_description(f"Downloading {arxiv_id}")

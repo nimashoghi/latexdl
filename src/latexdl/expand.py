@@ -4,7 +4,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from TexSoup import TexNode, TexSoup
+from TexSoup import TexNode
+
+from ._texsoup_wrapper import TexSoup
 
 
 def _resolve_file(f: Path):
@@ -27,7 +29,7 @@ def _file_to_args(f: Path) -> tuple[Callable[[], str], str, Path]:
     return lambda: f.read_text(encoding="utf-8"), str(f.absolute()), f.parent
 
 
-def expand_latex_file(
+def _expand_latex_file(
     contents: Callable[[], str],
     key: str,
     f_dir: Path,
@@ -67,7 +69,7 @@ def expand_latex_file(
             if (new_file := _resolve_file(f_dir / arg)) is None:
                 continue
             node.replace_with(
-                expand_latex_file(
+                _expand_latex_file(
                     *_file_to_args(new_file), root=root, imported=imported
                 ).expr
             )
@@ -90,7 +92,7 @@ def expand_latex_file(
             continue
 
         import_.replace_with(
-            expand_latex_file(
+            _expand_latex_file(
                 *_file_to_args(new_file), root=root, imported=imported
             ).expr
         )
@@ -116,12 +118,17 @@ def expand_latex_file(
             continue
 
         subimport.replace_with(
-            expand_latex_file(
+            _expand_latex_file(
                 *_file_to_args(new_file), root=root, imported=imported
             ).expr
         )
 
     return soup
+
+
+def expand_latex_file(f_in: Path, *, root: Path, imported: set[str]):
+    """Expand a LaTeX file, resolving all imports and includes."""
+    return _expand_latex_file(*_file_to_args(f_in), root=root, imported=imported)
 
 
 def main():
@@ -148,13 +155,13 @@ def main():
 
     # Resolve the input file
     if args.input:
-        resolved = expand_latex_file(
+        resolved = _expand_latex_file(
             *_file_to_args(args.input),
             root=args.input.parent,
             imported=set(),
         )
     else:
-        resolved = expand_latex_file(
+        resolved = _expand_latex_file(
             lambda: sys.stdin.read(),
             "<stdin>",
             Path.cwd(),

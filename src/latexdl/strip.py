@@ -5,10 +5,12 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from TexSoup import TexNode, TexSoup
+from TexSoup import TexNode
 from TexSoup.data import TexCmd, TexExpr, TexNamedEnv, TexText
 from TexSoup.utils import TC, Token
 from typing_extensions import assert_never
+
+from ._texsoup_wrapper import TexSoup
 
 
 class RecurseAction(enum.Enum):
