@@ -9,6 +9,10 @@ from TexSoup import TexNode
 from ._texsoup_wrapper import TexSoup
 
 
+class ExpandError(Exception):
+    pass
+
+
 def _resolve_file(f: Path):
     if f.exists():
         # If the file is not a tex file, return None
@@ -41,89 +45,92 @@ def _expand_latex_file(
 
     Reads from a tex file and once finished, writes to a tex file.
     """
-    # If we've already imported this file, return an empty node
-    if key in imported:
-        return TexSoup("")
+    try:
+        # If we've already imported this file, return an empty node
+        if key in imported:
+            return TexSoup("")
 
-    # Otherwise, add this file to the set of imported files
-    imported.add(key)
+        # Otherwise, add this file to the set of imported files
+        imported.add(key)
 
-    # Read the file and resolve imports.
-    soup = TexSoup(contents())
+        # Read the file and resolve imports.
+        soup = TexSoup(contents())
 
-    # Resolve input and include commands (e.g., \input{file.tex})
-    # (as far as we're concerned, they're the same).
-    for command in ("input", "include"):
-        for node in soup.find_all(command):
-            if not isinstance(node, TexNode) or len(node.args) != 1:
+        # Resolve input and include commands (e.g., \input{file.tex})
+        # (as far as we're concerned, they're the same).
+        for command in ("input", "include"):
+            for node in soup.find_all(command):
+                if not isinstance(node, TexNode) or len(node.args) != 1:
+                    continue
+
+                arg = cast(Any, node.args[0]).string
+                if not isinstance(arg, str):
+                    continue
+
+                # node.replace_with(
+                #     expand_latex_file(f_dir / arg, root=root, imported=imported).expr
+                # )
+
+                if (new_file := _resolve_file(f_dir / arg)) is None:
+                    continue
+                node.replace_with(
+                    _expand_latex_file(
+                        *_file_to_args(new_file), root=root, imported=imported
+                    ).expr
+                )
+
+        # Resolve imports, e.g., \import{dir/}{file.tex}
+        for import_ in soup.find_all("import"):
+            if not isinstance(import_, TexNode) or len(import_.args) != 2:
                 continue
 
-            arg = cast(Any, node.args[0]).string
-            if not isinstance(arg, str):
+            arg1 = cast(Any, import_.args[0]).string
+            arg2 = cast(Any, import_.args[1]).string
+            if not isinstance(arg1, str) or not isinstance(arg2, str):
                 continue
 
-            # node.replace_with(
-            #     expand_latex_file(f_dir / arg, root=root, imported=imported).expr
+            # import_.replace_with(
+            #     expand_latex_file(root / (arg1 + arg2), root=root, imported=imported).expr
             # )
 
-            if (new_file := _resolve_file(f_dir / arg)) is None:
+            if (new_file := _resolve_file(root / arg1 / arg2)) is None:
                 continue
-            node.replace_with(
+
+            import_.replace_with(
                 _expand_latex_file(
                     *_file_to_args(new_file), root=root, imported=imported
                 ).expr
             )
 
-    # Resolve imports, e.g., \import{dir/}{file.tex}
-    for import_ in soup.find_all("import"):
-        if not isinstance(import_, TexNode) or len(import_.args) != 2:
-            continue
+        # Resolve subimports, e.g., \subimport{dir/}{file.tex}
+        # This works similarly to \import, but the path is relative to the current file
+        for subimport in soup.find_all("subimport"):
+            if not isinstance(subimport, TexNode) or len(subimport.args) != 2:
+                continue
 
-        arg1 = cast(Any, import_.args[0]).string
-        arg2 = cast(Any, import_.args[1]).string
-        if not isinstance(arg1, str) or not isinstance(arg2, str):
-            continue
+            arg1 = cast(Any, subimport.args[0]).string
+            arg2 = cast(Any, subimport.args[1]).string
+            if not isinstance(arg1, str) or not isinstance(arg2, str):
+                continue
 
-        # import_.replace_with(
-        #     expand_latex_file(root / (arg1 + arg2), root=root, imported=imported).expr
-        # )
+            # subimport.replace_with(
+            #     expand_latex_file(
+            #         f_dir / (arg1 + arg2), root=root, imported=imported
+            #     ).expr
+            # )
 
-        if (new_file := _resolve_file(root / arg1 / arg2)) is None:
-            continue
+            if (new_file := _resolve_file(f_dir / arg1 / arg2)) is None:
+                continue
 
-        import_.replace_with(
-            _expand_latex_file(
-                *_file_to_args(new_file), root=root, imported=imported
-            ).expr
-        )
+            subimport.replace_with(
+                _expand_latex_file(
+                    *_file_to_args(new_file), root=root, imported=imported
+                ).expr
+            )
 
-    # Resolve subimports, e.g., \subimport{dir/}{file.tex}
-    # This works similarly to \import, but the path is relative to the current file
-    for subimport in soup.find_all("subimport"):
-        if not isinstance(subimport, TexNode) or len(subimport.args) != 2:
-            continue
-
-        arg1 = cast(Any, subimport.args[0]).string
-        arg2 = cast(Any, subimport.args[1]).string
-        if not isinstance(arg1, str) or not isinstance(arg2, str):
-            continue
-
-        # subimport.replace_with(
-        #     expand_latex_file(
-        #         f_dir / (arg1 + arg2), root=root, imported=imported
-        #     ).expr
-        # )
-
-        if (new_file := _resolve_file(f_dir / arg1 / arg2)) is None:
-            continue
-
-        subimport.replace_with(
-            _expand_latex_file(
-                *_file_to_args(new_file), root=root, imported=imported
-            ).expr
-        )
-
-    return soup
+        return soup
+    except Exception as e:
+        raise ExpandError(f"Error expanding {key}") from e
 
 
 def expand_latex_file(f_in: Path, *, root: Path, imported: set[str]):
