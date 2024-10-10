@@ -45,7 +45,7 @@ def _fix_brackets(content):
             if char in "([":
                 if current:
                     result.append(current)
-                    current = ""
+                current = char
                 stack.append(char)
             elif char in ")]":
                 if stack and (
