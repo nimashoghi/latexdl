@@ -9,9 +9,6 @@ from pathlib import Path
 import requests
 from tqdm import tqdm
 
-from .expand import expand_latex_file
-from .strip import strip
-
 
 def _extract_arxiv_id(package: str) -> str:
     # Approved formats (square brackets denote optional parts):
@@ -118,26 +115,35 @@ def main():
         default=Path.cwd(),
     )
     parser.add_argument(
+        "--format",
+        "-f",
+        choices=["markdown", "plain", "latex"],
+        default="markdown",
+        help="Output format (markdown, plain text, or processed latex)",
+    )
+
+    # Only used for latex format:
+    parser.add_argument(
         "--strip-comments",
-        help="Strip comments",
+        help="Strip comments (latex format only)",
         action=argparse.BooleanOptionalAction,
         default=True,
     )
     parser.add_argument(
         "--strip-whitespace",
-        help="Strip whitespace",
+        help="Strip whitespace (latex format only)",
         action=argparse.BooleanOptionalAction,
         default=True,
     )
     parser.add_argument(
         "--strip-clutter",
-        help="Strip clutter",
+        help="Strip clutter (latex format only)",
         action=argparse.BooleanOptionalAction,
         default=True,
     )
     parser.add_argument(
         "--seek-to-document",
-        help="Seek to the document node",
+        help="Seek to the document node (latex format only)",
         action=argparse.BooleanOptionalAction,
         default=True,
     )
@@ -161,7 +167,6 @@ def main():
     arxiv_ids: list[str] = []
     for package in args.packages:
         assert isinstance(package, str), "Package must be a string"
-
         arxiv_ids.append(_extract_arxiv_id(package))
 
     # Process the packages
@@ -177,28 +182,31 @@ def main():
                 # Remove the directory
                 logging.warning(f"Removing {output} because of --force-overwrite")
                 shutil.rmtree(output)
-                continue
-
-            # Otherwise, ask the user
-            print(f"Output path {output} already exists")
-            resp = input(
-                "Do you want to overwrite it? This will remove all files in the directory. [y/N] "
-            ).lower()
-            if resp == "y":
-                logging.warning(f"Removing {output}")
-                shutil.rmtree(output)
-                continue
-
-            logging.warning(f"Skipping {arxiv_id}")
+            else:
+                # Otherwise, ask the user
+                print(f"Output path {output} already exists")
+                resp = input(
+                    "Do you want to overwrite it? This will remove all files in the directory. [y/N] "
+                ).lower()
+                if resp == "y":
+                    logging.warning(f"Removing {output}")
+                    shutil.rmtree(output)
+                else:
+                    logging.warning(f"Skipping {arxiv_id}")
+                    continue
 
         # Create the directory
         output.mkdir(parents=True, exist_ok=True)
 
         # Download and extract the package
         pbar.set_description(f"Downloading {arxiv_id}")
-        _download_and_extract(
-            arxiv_id, output, redownload_existing=args.redownload_existing
-        )
+        try:
+            _download_and_extract(
+                arxiv_id, output, redownload_existing=args.redownload_existing
+            )
+        except Exception as e:
+            print(f"Error downloading/extracting {arxiv_id}: {e}")
+            continue
 
         # Find the main LaTeX file in the extracted directory
         if (main_file := _find_main_latex_file(output)) is None:
@@ -207,25 +215,37 @@ def main():
 
         print("Resolved main LaTeX file:", main_file)
 
-        # Expand the LaTeX file (i.e., resolve imports into 1 large file)
-        pbar.set_description(f"Expanding {arxiv_id}")
-        latex_root = expand_latex_file(main_file, root=main_file.parent, imported=set())
+        try:
+            # Convert based on selected format
+            if args.format in ("markdown", "plain"):
+                from ._pandoc import convert_latex_to_markdown
 
-        # Strip comments and whitespace
-        pbar.set_description(f"Stripping {arxiv_id}")
-        latex_root = strip(
-            latex_root,
-            strip_comments=args.strip_comments,
-            strip_whitespace=args.strip_whitespace,
-            strip_clutter=args.strip_clutter,
-            seek_to_document_node=args.seek_to_document,
-        )
+                pbar.set_description(f"Converting {arxiv_id} to {args.format}")
+                converted_content = convert_latex_to_markdown(
+                    main_file, format="plain" if args.format == "plain" else "markdown"
+                )
+            else:  # latex
+                from ._latex import convert_latex_to_latex
 
-        # Write to root/{arxiv_id}.tex
-        output_file_path = output_base / f"{arxiv_id}.tex"
-        pbar.set_description(f"Writing {arxiv_id} to {output_file_path}")
-        with output_file_path.open("w", encoding="utf-8") as f:
-            f.write(str(latex_root))
+                pbar.set_description(f"Processing {arxiv_id} latex")
+                converted_content = convert_latex_to_latex(
+                    main_file,
+                    strip_comments=args.strip_comments,
+                    strip_whitespace=args.strip_whitespace,
+                    strip_clutter=args.strip_clutter,
+                    seek_to_document=args.seek_to_document,
+                )
+
+            # Write output
+            extension = "tex" if args.format == "latex" else args.format
+            output_file_path = output_base / f"{arxiv_id}.{extension}"
+            pbar.set_description(f"Writing {arxiv_id} to {output_file_path}")
+            with output_file_path.open("w", encoding="utf-8") as f:
+                f.write(converted_content)
+
+        except Exception as e:
+            print(f"Error converting {arxiv_id}: {e}")
+            continue
 
 
 if __name__ == "__main__":
