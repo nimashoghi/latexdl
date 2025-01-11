@@ -1,21 +1,25 @@
 [tool.poetry]
 name = "latexdl"
-version = "0.5.0"
+version = "0.6.0-dev"
 description = ""
 authors = ["Nima Shoghi <nimashoghi@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "^3.9"
 tqdm = "^4.66.4"
 requests = "*"
 typing-extensions = "*"
+pylatexenc = "^2.10"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "*"
 rich = "*"
 ruff = "*"
 pyright = "*"
+pytest = "*"
+hypothesis = "*"
+pytest-cov = "*"
 
 [build-system]
 requires = ["poetry-core"]
