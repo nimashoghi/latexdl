@@ -1,10 +1,8 @@
 import argparse
+import subprocess
 import sys
-from collections.abc import Callable
+import tempfile
 from pathlib import Path
-from typing import Any, cast
-
-from TexSoup import TexNode
 
 from ._texsoup_wrapper import TexSoup
 
@@ -13,129 +11,29 @@ class ExpandError(Exception):
     pass
 
 
-def _resolve_file(f: Path):
-    if f.exists():
-        # If the file is not a tex file, return None
-        if f.suffix != ".tex":
-            return None
+def expand_latex_file(f_in: Path):
+    """Expand a LaTeX file using latexpand utility."""
+    expanded_file = f_in.parent / f"expanded_{f_in.name}"
 
-        return f
-
-    # If the file doesn't exist, try adding the .tex extension
-    f = f.with_suffix(".tex")
-    if f.exists():
-        return f
-
-    return None
-
-
-def _file_to_args(f: Path) -> tuple[Callable[[], str], str, Path]:
-    return lambda: f.read_text(encoding="utf-8"), str(f.absolute()), f.parent
-
-
-def _expand_latex_file(
-    contents: Callable[[], str],
-    key: str,
-    f_dir: Path,
-    *,
-    root: Path,
-    imported: set[str],
-):
-    """Resolve all imports and update the parse tree.
-
-    Reads from a tex file and once finished, writes to a tex file.
-    """
     try:
-        # If we've already imported this file, return an empty node
-        if key in imported:
-            return TexSoup("")
+        result = subprocess.run(
+            [
+                "latexpand",
+                str(f_in.relative_to(f_in.parent)),
+                "--output",
+                str(expanded_file.relative_to(f_in.parent)),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=f_in.parent,
+        )
 
-        # Otherwise, add this file to the set of imported files
-        imported.add(key)
+        if result.returncode != 0:
+            raise RuntimeError(f"latexpand failed: {result.stderr}")
 
-        # Read the file and resolve imports.
-        soup = TexSoup(contents())
-
-        # Resolve input and include commands (e.g., \input{file.tex})
-        # (as far as we're concerned, they're the same).
-        for command in ("input", "include"):
-            for node in soup.find_all(command):
-                if not isinstance(node, TexNode) or len(node.args) != 1:
-                    continue
-
-                arg = cast(Any, node.args[0]).string
-                if not isinstance(arg, str):
-                    continue
-
-                # node.replace_with(
-                #     expand_latex_file(f_dir / arg, root=root, imported=imported).expr
-                # )
-
-                if (new_file := _resolve_file(f_dir / arg)) is None:
-                    continue
-                node.replace_with(
-                    _expand_latex_file(
-                        *_file_to_args(new_file), root=root, imported=imported
-                    ).expr
-                )
-
-        # Resolve imports, e.g., \import{dir/}{file.tex}
-        for import_ in soup.find_all("import"):
-            if not isinstance(import_, TexNode) or len(import_.args) != 2:
-                continue
-
-            arg1 = cast(Any, import_.args[0]).string
-            arg2 = cast(Any, import_.args[1]).string
-            if not isinstance(arg1, str) or not isinstance(arg2, str):
-                continue
-
-            # import_.replace_with(
-            #     expand_latex_file(root / (arg1 + arg2), root=root, imported=imported).expr
-            # )
-
-            if (new_file := _resolve_file(root / arg1 / arg2)) is None:
-                continue
-
-            import_.replace_with(
-                _expand_latex_file(
-                    *_file_to_args(new_file), root=root, imported=imported
-                ).expr
-            )
-
-        # Resolve subimports, e.g., \subimport{dir/}{file.tex}
-        # This works similarly to \import, but the path is relative to the current file
-        for subimport in soup.find_all("subimport"):
-            if not isinstance(subimport, TexNode) or len(subimport.args) != 2:
-                continue
-
-            arg1 = cast(Any, subimport.args[0]).string
-            arg2 = cast(Any, subimport.args[1]).string
-            if not isinstance(arg1, str) or not isinstance(arg2, str):
-                continue
-
-            # subimport.replace_with(
-            #     expand_latex_file(
-            #         f_dir / (arg1 + arg2), root=root, imported=imported
-            #     ).expr
-            # )
-
-            if (new_file := _resolve_file(f_dir / arg1 / arg2)) is None:
-                continue
-
-            subimport.replace_with(
-                _expand_latex_file(
-                    *_file_to_args(new_file), root=root, imported=imported
-                ).expr
-            )
-
-        return soup
+        return expanded_file.read_text(encoding="utf-8", errors="ignore")
     except Exception as e:
-        raise ExpandError(f"Error expanding {key}") from e
-
-
-def expand_latex_file(f_in: Path, *, root: Path, imported: set[str]):
-    """Expand a LaTeX file, resolving all imports and includes."""
-    return _expand_latex_file(*_file_to_args(f_in), root=root, imported=imported)
+        raise ExpandError(f"Error expanding {f_in}") from e
 
 
 def main():
@@ -160,32 +58,36 @@ def main():
     )
     args = parser.parse_args()
 
-    # Resolve the input file
-    if args.input:
-        resolved = _expand_latex_file(
-            *_file_to_args(args.input),
-            root=args.input.parent,
-            imported=set(),
-        )
-    else:
-        resolved = _expand_latex_file(
-            lambda: sys.stdin.read(),
-            "<stdin>",
-            Path.cwd(),
-            root=Path.cwd(),
-            imported=set(),
-        )
+    input: Path | None = args.input
+    output: Path | None = args.output
+    strip_: bool = args.strip
 
-    if args.strip:
+    # Resolve the input file
+    if input:
+        resolved = expand_latex_file(input)
+    else:
+        # Create a temporary file for stdin content
+        with tempfile.NamedTemporaryFile(
+            suffix=".tex", mode="w", encoding="utf-8", delete=False
+        ) as tmp:
+            tmp.write(sys.stdin.read())
+            tmp_path = Path(tmp.name)
+
+        try:
+            resolved = expand_latex_file(tmp_path)
+        finally:
+            tmp_path.unlink()
+
+    if strip_:
         from .strip import strip
 
-        resolved = strip(resolved)
+        resolved = strip(TexSoup(resolved))
 
     resolved = str(resolved)
 
     # Write the output
-    if args.output:
-        args.output.write_text(resolved, encoding="utf-8")
+    if output:
+        output.write_text(resolved, encoding="utf-8")
     else:
         print(resolved)
 

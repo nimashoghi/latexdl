@@ -88,7 +88,7 @@ def _strip_comments_(expr: TexExpr):
 
         # If this is a comment node, remove it
         content = child._text
-        if isinstance(content, Token) and content.category == TC.Comment:
+        if isinstance(content, Token) and content.category == TC.Comment:  # type: ignore
             return RecurseAction.REMOVE
 
         return RecurseAction.CONTINUE

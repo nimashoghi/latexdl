@@ -62,7 +62,7 @@ def _download_and_extract(
 def _find_main_latex_file(directory: Path) -> Path | None:
     potential_main_files: list[tuple[Path, float]] = []
 
-    for file_path in directory.rglob("*.tex"):
+    for file_path in directory.rglob("*.[tT][eE][xX]"):  # Case insensitive extension
         score = 0.0
 
         # Check filename
@@ -70,7 +70,7 @@ def _find_main_latex_file(directory: Path) -> Path | None:
             score += 5
 
         try:
-            content = file_path.read_text(encoding="utf-8")
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
         except UnicodeDecodeError:
             # Skip files that can't be read as UTF-8
             continue
@@ -117,8 +117,8 @@ def main():
     parser.add_argument(
         "--format",
         "-f",
-        choices=["markdown", "plain", "latex"],
-        default="markdown",
+        choices=("latex", "markdown", "plain"),
+        default="latex",
         help="Output format (markdown, plain text, or processed latex)",
     )
 
