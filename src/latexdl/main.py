@@ -9,6 +9,9 @@ from pathlib import Path
 import requests
 from tqdm import tqdm
 
+from .expand import expand_latex_file
+from .strip import strip
+
 
 def _extract_arxiv_id(package: str) -> str:
     # Approved formats (square brackets denote optional parts):
@@ -115,15 +118,6 @@ def main():
         default=Path.cwd(),
     )
     parser.add_argument(
-        "--format",
-        "-f",
-        choices=("latex", "markdown", "plain"),
-        default="latex",
-        help="Output format (markdown, plain text, or processed latex)",
-    )
-
-    # Only used for latex format:
-    parser.add_argument(
         "--strip-comments",
         help="Strip comments (latex format only)",
         action=argparse.BooleanOptionalAction,
@@ -216,25 +210,18 @@ def main():
         print("Resolved main LaTeX file:", main_file)
 
         try:
-            # Convert based on selected format
-            if args.format in ("markdown", "plain"):
-                from ._pandoc import convert_latex_to_markdown
+            pbar.set_description(f"Processing {arxiv_id} latex")
+            # Expand the LaTeX file (i.e., resolve imports into 1 large file)
+            expanded = expand_latex_file(main_file)
 
-                pbar.set_description(f"Converting {arxiv_id} to {args.format}")
-                converted_content = convert_latex_to_markdown(
-                    main_file, format="plain" if args.format == "plain" else "markdown"
-                )
-            else:  # latex
-                from ._latex import convert_latex_to_latex
-
-                pbar.set_description(f"Processing {arxiv_id} latex")
-                converted_content = convert_latex_to_latex(
-                    main_file,
-                    strip_comments=args.strip_comments,
-                    strip_whitespace=args.strip_whitespace,
-                    strip_clutter=args.strip_clutter,
-                    seek_to_document=args.seek_to_document,
-                )
+            # Strip comments and whitespace
+            converted_content = strip(
+                expanded,
+                strip_comments=args.strip_comments,
+                strip_whitespace=args.strip_whitespace,
+                strip_clutter=args.strip_clutter,
+                seek_to_document_node=args.seek_to_document,
+            )
 
             # Write output
             extension = "tex" if args.format == "latex" else args.format
