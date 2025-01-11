@@ -1,8 +1,10 @@
 import argparse
+import contextlib
 import logging
 import re
 import shutil
 import tarfile
+import tempfile
 import urllib.parse
 from pathlib import Path
 
@@ -115,7 +117,7 @@ def main():
         "-o",
         help="Output directory",
         type=Path,
-        default=Path.cwd(),
+        required=False,
     )
     parser.add_argument(
         "--text",
@@ -137,81 +139,88 @@ def main():
     )
     args = parser.parse_args()
 
-    output_base: Path = args.output
+    output_base: Path | None = args.output
+    output_stdout = output_base is None
+    with contextlib.ExitStack() as stack:
+        if output_base is None:
+            output_base = Path(stack.enter_context(tempfile.TemporaryDirectory()))
 
-    # Resolve the packages
-    arxiv_ids: list[str] = []
-    for package in args.packages:
-        assert isinstance(package, str), "Package must be a string"
-        arxiv_ids.append(_extract_arxiv_id(package))
+        # Resolve the packages
+        arxiv_ids: list[str] = []
+        for package in args.packages:
+            assert isinstance(package, str), "Package must be a string"
+            arxiv_ids.append(_extract_arxiv_id(package))
 
-    # Process the packages
-    for arxiv_id in (pbar := tqdm(arxiv_ids)):
-        output = output_base / arxiv_id
-        # If the package dir exists, prompt the user
-        if output.exists():
-            logging.info(f"Output path {output} already exists")
-            if not output.is_dir():
-                raise ValueError(f"Output path {output} is not a directory")
-
-            if args.force_overwrite:
-                # Remove the directory
-                logging.warning(f"Removing {output} because of --force-overwrite")
-                shutil.rmtree(output)
-            else:
-                # Otherwise, ask the user
+        # Process the packages
+        for arxiv_id in (pbar := tqdm(arxiv_ids)):
+            output = output_base / arxiv_id
+            # If the package dir exists, prompt the user
+            if output.exists():
                 logging.info(f"Output path {output} already exists")
-                resp = input(
-                    "Do you want to overwrite it? This will remove all files in the directory. [y/N] "
-                ).lower()
-                if resp == "y":
-                    logging.warning(f"Removing {output}")
+                if not output.is_dir():
+                    raise ValueError(f"Output path {output} is not a directory")
+
+                if args.force_overwrite:
+                    # Remove the directory
+                    logging.warning(f"Removing {output} because of --force-overwrite")
                     shutil.rmtree(output)
                 else:
-                    logging.warning(f"Skipping {arxiv_id}")
-                    continue
+                    # Otherwise, ask the user
+                    logging.info(f"Output path {output} already exists")
+                    resp = input(
+                        "Do you want to overwrite it? This will remove all files in the directory. [y/N] "
+                    ).lower()
+                    if resp == "y":
+                        logging.warning(f"Removing {output}")
+                        shutil.rmtree(output)
+                    else:
+                        logging.warning(f"Skipping {arxiv_id}")
+                        continue
 
-        # Create the directory
-        output.mkdir(parents=True, exist_ok=True)
+            # Create the directory
+            output.mkdir(parents=True, exist_ok=True)
 
-        # Download and extract the package
-        pbar.set_description(f"Downloading {arxiv_id}")
-        try:
-            _download_and_extract(
-                arxiv_id, output, redownload_existing=args.redownload_existing
-            )
-        except IOError:
-            logging.error(f"Error downloading/extracting {arxiv_id}", exc_info=True)
-            continue
+            # Download and extract the package
+            pbar.set_description(f"Downloading {arxiv_id}")
+            try:
+                _download_and_extract(
+                    arxiv_id, output, redownload_existing=args.redownload_existing
+                )
+            except IOError:
+                logging.error(f"Error downloading/extracting {arxiv_id}", exc_info=True)
+                continue
 
-        # Find the main LaTeX file in the extracted directory
-        if (main_file := _find_main_latex_file(output)) is None:
-            logging.error(
-                f"Could not find the main LaTeX for ID {arxiv_id} (output: {output})"
-            )
-            continue
+            # Find the main LaTeX file in the extracted directory
+            if (main_file := _find_main_latex_file(output)) is None:
+                logging.error(
+                    f"Could not find the main LaTeX for ID {arxiv_id} (output: {output})"
+                )
+                continue
 
-        logging.info(f"Resolved main LaTeX file: {main_file}")
+            logging.info(f"Resolved main LaTeX file: {main_file}")
 
-        try:
-            pbar.set_description(f"Processing {arxiv_id} latex")
-            # Expand the LaTeX file (i.e., resolve imports into 1 large file)
-            expanded = expand_latex_file(main_file)
+            try:
+                pbar.set_description(f"Processing {arxiv_id} latex")
+                # Expand the LaTeX file (i.e., resolve imports into 1 large file)
+                expanded = expand_latex_file(main_file)
 
-            # Convert to text if requested
-            if args.text:
-                expanded = strip(expanded)
+                # Convert to text if requested
+                if args.text:
+                    expanded = strip(expanded)
 
-            # Write output
-            extension = "txt" if args.text else "tex"
-            output_file_path = output_base / f"{arxiv_id}.{extension}"
-            pbar.set_description(f"Writing {arxiv_id} to {output_file_path}")
-            with output_file_path.open("w", encoding="utf-8") as f:
-                f.write(expanded)
+                # Write output
+                if output_stdout:
+                    print(expanded)
+                else:
+                    extension = "txt" if args.text else "tex"
+                    output_file_path = output_base / f"{arxiv_id}.{extension}"
+                    pbar.set_description(f"Writing {arxiv_id} to {output_file_path}")
+                    with output_file_path.open("w", encoding="utf-8") as f:
+                        f.write(expanded)
 
-        except IOError:
-            logging.error(f"Error converting {arxiv_id}", exc_info=True)
-            continue
+            except IOError:
+                logging.error(f"Error converting {arxiv_id}", exc_info=True)
+                continue
 
 
 if __name__ == "__main__":
