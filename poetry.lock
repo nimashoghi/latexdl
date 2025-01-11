@@ -866,13 +866,12 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pylatexenc"
-version = "3.0a31"
+version = "2.10"
 description = "Simple LaTeX parser providing latex-to-unicode and unicode-to-latex conversion"
 optional = false
-python-versions = "<4.0,>=3.8"
+python-versions = "*"
 files = [
-    {file = "pylatexenc-3.0a31-py3-none-any.whl", hash = "sha256:406dd97a157e76a925c3f6b06afe35654505bcf9047bd6725b374d20e422dd1e"},
-    {file = "pylatexenc-3.0a31.tar.gz", hash = "sha256:d098df0b25f126f4fbc711e018393c60e485e4e9cdfcbb2aeb429d2bf7e5e057"},
+    {file = "pylatexenc-2.10.tar.gz", hash = "sha256:3dd8fd84eb46dc30bee1e23eaab8d8fb5a7f507347b23e5f38ad9675c84f40d3"},
 ]
 
 [[package]]
@@ -1363,4 +1362,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "f508fd664822fe97a8557409ba1cbedc3d788bb4b657d33b210f75d9335d8e08"
+content-hash = "5d7f1300bab4351811168ca61eb062da78fcf441ec41071b118daed7f4de5bc1"

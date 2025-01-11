@@ -160,7 +160,7 @@ def main():
                 shutil.rmtree(output)
             else:
                 # Otherwise, ask the user
-                print(f"Output path {output} already exists")
+                logging.info(f"Output path {output} already exists")
                 resp = input(
                     "Do you want to overwrite it? This will remove all files in the directory. [y/N] "
                 ).lower()
@@ -180,16 +180,18 @@ def main():
             _download_and_extract(
                 arxiv_id, output, redownload_existing=args.redownload_existing
             )
-        except Exception as e:
-            print(f"Error downloading/extracting {arxiv_id}: {e}")
+        except IOError:
+            logging.error(f"Error downloading/extracting {arxiv_id}", exc_info=True)
             continue
 
         # Find the main LaTeX file in the extracted directory
         if (main_file := _find_main_latex_file(output)) is None:
-            print(f"Could not find the main LaTeX for ID {arxiv_id} (output: {output})")
+            logging.error(
+                f"Could not find the main LaTeX for ID {arxiv_id} (output: {output})"
+            )
             continue
 
-        print("Resolved main LaTeX file:", main_file)
+        logging.info(f"Resolved main LaTeX file: {main_file}")
 
         try:
             pbar.set_description(f"Processing {arxiv_id} latex")
@@ -201,14 +203,14 @@ def main():
                 expanded = strip(expanded)
 
             # Write output
-            extension = "tex" if args.format == "latex" else args.format
+            extension = "txt" if args.text else "tex"
             output_file_path = output_base / f"{arxiv_id}.{extension}"
             pbar.set_description(f"Writing {arxiv_id} to {output_file_path}")
             with output_file_path.open("w", encoding="utf-8") as f:
                 f.write(expanded)
 
-        except Exception as e:
-            print(f"Error converting {arxiv_id}: {e}")
+        except IOError:
+            logging.error(f"Error converting {arxiv_id}", exc_info=True)
             continue
 
 

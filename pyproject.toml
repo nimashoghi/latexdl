@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "latexdl"
-version = "0.6.3-dev"
+version = "0.6.4"
 description = ""
 authors = ["Nima Shoghi <nimashoghi@gmail.com>"]
 readme = "README.md"
@@ -10,7 +10,7 @@ python = "^3.9"
 tqdm = "^4.66.4"
 requests = "*"
 typing-extensions = "*"
-pylatexenc = { version = "3.0a31", allow-prereleases = true }
+pylatexenc = "^2"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "*"
