@@ -196,8 +196,8 @@ def main():
             # Expand the LaTeX file (i.e., resolve imports into 1 large file)
             expanded = expand_latex_file(main_file)
 
-            # Strip comments and whitespace
-            if args.strip:
+            # Convert to text if requested
+            if args.text:
                 expanded = strip(expanded)
 
             # Write output
