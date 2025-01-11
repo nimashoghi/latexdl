@@ -894,21 +894,6 @@ files = [
 ]
 
 [[package]]
-name = "TexSoup"
-version = "0.3.1"
-description = "parses valid LaTeX and provides variety of Beautiful-Soup-esque methods and Pythonic idioms for iterating over and searching the parse tree"
-optional = false
-python-versions = "*"
-files = []
-develop = false
-
-[package.source]
-type = "git"
-url = "https://github.com/JCGoran/TexSoup.git"
-reference = "fix/special_commands"
-resolved_reference = "fc895b351cf3c54eea9b67c248f3e357e53a4485"
-
-[[package]]
 name = "tornado"
 version = "6.2"
 description = "Tornado is a Python web framework and asynchronous networking library, originally developed at FriendFeed."
@@ -1006,4 +991,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.7"
-content-hash = "d4740b7e3c2fdd19ab6ae83f467c9b554d3b1fd2a9b0e22f111b6ac46e4ab627"
+content-hash = "05a1e551e4f5af7bb4a387d668246371e9dab1fabb4dea00366bbe5917251a3a"

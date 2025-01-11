@@ -5,12 +5,16 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from TexSoup import TexNode
-from TexSoup.data import TexCmd, TexExpr, TexNamedEnv, TexText
-from TexSoup.utils import TC, Token
-from typing_extensions import assert_never
-
-from ._texsoup_wrapper import TexSoup
+from pylatexenc.latexwalker import (
+    LatexCharsNode,
+    LatexCommentNode,
+    LatexEnvironmentNode,
+    LatexGroupNode,
+    LatexMacroNode,
+    LatexNode,
+    LatexWalker,
+    ParsingState,
+)
 
 
 class RecurseAction(enum.Enum):
@@ -20,83 +24,81 @@ class RecurseAction(enum.Enum):
 
 
 def _recurse(
-    expr: TexExpr,
-    child_fn: Callable[[TexExpr, TexExpr], RecurseAction],
-):
+    node: LatexNode,
+    child_fn: Callable[[LatexNode, LatexNode | None], RecurseAction],
+    parent: LatexNode | None = None,
+) -> LatexNode | None:
     try:
-        # First, take a pass through the arguments (which is a list)
-        for i, arg in enumerate(expr.args):
-            arg_actions = {
-                child_fn(child_expr, expr)
-                for child_expr in arg.contents
-                if isinstance(child_expr, TexExpr)
-            }
+        # Process current node
+        action = child_fn(node, parent)
+        if action == RecurseAction.REMOVE:
+            return None
+        elif action == RecurseAction.SKIP:
+            return node
 
-            if RecurseAction.REMOVE in arg_actions:
-                # Remove the arg from the list
-                expr.args.pop(i)
-                continue
-            elif RecurseAction.SKIP in arg_actions:
-                continue
-            else:
-                # Recurse on the arg
-                _recurse(arg, child_fn)
+        # Recurse based on node type
+        if isinstance(node, LatexEnvironmentNode):
+            new_nodelist = _process_nodelist(node.nodelist, child_fn, node)
+            if new_nodelist:
+                node.nodelist = new_nodelist
+        elif isinstance(node, LatexMacroNode):
+            if node.nodeargd and node.nodeargd.argnlist:
+                new_argnlist = [
+                    _process_nodelist(arg, child_fn, node)
+                    if isinstance(arg, list)
+                    else _recurse(arg, child_fn, node)
+                    for arg in node.nodeargd.argnlist
+                ]
+                node.nodeargd.argnlist = [
+                    arg for arg in new_argnlist if arg is not None
+                ]
+        elif isinstance(node, LatexGroupNode):
+            new_nodelist = _process_nodelist(node.nodelist, child_fn, node)
+            if new_nodelist:
+                node.nodelist = new_nodelist
 
-        # Next, take a pass through the contents
-        for child in expr._contents:
-            # If the child isn't a TexExpr, this is a leaf node. Continue.
-            if not isinstance(child, TexExpr):
-                continue
-
-            match child_fn(child, expr):
-                case RecurseAction.REMOVE:
-                    expr.remove(child)
-                case RecurseAction.SKIP:
-                    continue
-                case RecurseAction.CONTINUE:
-                    _recurse(child, child_fn)
-                case _action:
-                    assert_never(_action)
+        return node
     except Exception as e:
-        logging.error(f"Error while recursing through {expr}. Skipping. Error: {e}")
-        return expr
-
-    return expr
+        logging.error(f"Error while recursing through {node}. Skipping. Error: {e}")
+        return node
 
 
-def _strip_whitespace_(expr: TexExpr):
-    def child_fn(child: TexExpr, parent: TexExpr):
-        # If this is not a text node (or the node is marked to preserve whitespace), ignore.
-        if not isinstance(child, TexText) or child.preserve_whitespace:
-            return RecurseAction.CONTINUE
+def _process_nodelist(
+    nodelist: list[LatexNode],
+    child_fn: Callable[[LatexNode, LatexNode | None], RecurseAction],
+    parent: LatexNode | None = None,
+) -> list[LatexNode]:
+    result = []
+    for node in nodelist:
+        processed = _recurse(node, child_fn, parent)
+        if processed is not None:
+            result.append(processed)
+    return result
 
-        # If this is a whitespace node, remove it
-        content = child._text
-        if isinstance(content, str) and content.isspace():
-            return RecurseAction.REMOVE
 
+def _strip_whitespace(node: LatexNode) -> LatexNode | None:
+    def child_fn(child: LatexNode, parent: LatexNode | None) -> RecurseAction:
+        if isinstance(child, LatexCharsNode):
+            # Only remove if the node is pure whitespace
+            if child.chars.isspace():
+                return RecurseAction.REMOVE
+            # Otherwise, normalize whitespace
+            child.chars = " ".join(child.chars.split())
         return RecurseAction.CONTINUE
 
-    return _recurse(expr, child_fn)
+    return _recurse(node, child_fn)
 
 
-def _strip_comments_(expr: TexExpr):
-    def child_fn(child: TexExpr, parent: TexExpr):
-        # If this is not a text node, ignore.
-        if not isinstance(child, TexText):
-            return RecurseAction.CONTINUE
-
-        # If this is a comment node, remove it
-        content = child._text
-        if isinstance(content, Token) and content.category == TC.Comment:  # type: ignore
+def _strip_comments(node: LatexNode) -> LatexNode | None:
+    def child_fn(child: LatexNode, parent: LatexNode | None) -> RecurseAction:
+        if isinstance(child, LatexCommentNode):
             return RecurseAction.REMOVE
-
         return RecurseAction.CONTINUE
 
-    return _recurse(expr, child_fn)
+    return _recurse(node, child_fn)
 
 
-def _strip_clutter_(expr: TexExpr):
+def _strip_clutter(node: LatexNode) -> LatexNode | None:
     CLUTTER_ENVS = {
         "figure",
         "figure*",
@@ -116,74 +118,94 @@ def _strip_clutter_(expr: TexExpr):
         "center",
         "flushleft",
         "flushright",
-        # tikz
         "tikzpicture",
         "pgfpicture",
     }
 
-    def child_fn(child: TexExpr, parent: TexExpr):
-        # Remove clutter environments, e.g., figures and tables
-        if isinstance(child, TexNamedEnv) and child.name in CLUTTER_ENVS:
-            return RecurseAction.REMOVE
+    CLUTTER_COMMANDS = {
+        "newcommand",
+        "renewcommand",
+        "def",
+    }
 
-        # Remove custom command declarations, e.g., \newcommand, \renewcommand, \def, etc.
-        if isinstance(child, TexCmd) and child.name in {
-            "newcommand",
-            "renewcommand",
-            "def",
-        }:
+    def child_fn(child: LatexNode, parent: LatexNode | None) -> RecurseAction:
+        if isinstance(child, LatexEnvironmentNode) and child.envname in CLUTTER_ENVS:
+            # Remove the entire environment including its contents
             return RecurseAction.REMOVE
-
+        if isinstance(child, LatexMacroNode) and child.macroname in CLUTTER_COMMANDS:
+            # Remove the entire macro including its arguments
+            return RecurseAction.REMOVE
+            # Remove the entire macro including its arguments
+            return RecurseAction.REMOVE
         return RecurseAction.CONTINUE
 
-    return _recurse(expr, child_fn)
+    return _recurse(node, child_fn)
 
 
-def _seek_to_document_node(expr: TexExpr):
-    for child in expr.all:
-        # If the child isn't a TexExpr, this is a leaf node. Continue.
-        if not isinstance(child, TexExpr):
-            continue
+def _seek_to_document_node(node: LatexNode) -> LatexNode | None:
+    if isinstance(node, LatexEnvironmentNode) and node.envname == "document":
+        return node
 
-        # If this is a document node, return it
-        if isinstance(child, TexNamedEnv) and child.name == "document":
-            return child
-
-        # Recurse on all the children
-        if (result := _seek_to_document_node(child)) is not None:
-            return result
+    if isinstance(node, (LatexEnvironmentNode, LatexGroupNode)):
+        for child in node.nodelist:
+            result = _seek_to_document_node(child)
+            if result:
+                return result
 
     return None
 
 
 def strip(
-    node: TexNode,
+    content: str,
     *,
     strip_comments: bool = True,
     strip_whitespace: bool = True,
     strip_clutter: bool = True,
     seek_to_document_node: bool = True,
-):
-    if strip_comments:
-        _strip_comments_(node.expr)
-    if strip_whitespace:
-        _strip_whitespace_(node.expr)
-    if strip_clutter:
-        _strip_clutter_(node.expr)
+) -> str:
+    """
+    Strip unnecessary elements from LaTeX content while preserving LaTeX structure.
 
-    if (
-        seek_to_document_node
-        and (document := _seek_to_document_node(node.expr)) is not None
-    ):
-        node = TexNode(document)
-    return node
+    Args:
+        content: Input LaTeX content
+        strip_comments: Whether to remove comments
+        strip_whitespace: Whether to normalize whitespace
+        strip_clutter: Whether to remove clutter (figures, tables, etc)
+        seek_to_document_node: Whether to extract only the document environment content
+
+    Returns:
+        Stripped LaTeX content as a string
+    """
+    # Parse the LaTeX content
+    walker = LatexWalker(content)
+    nodes, _, _ = walker.get_latex_nodes()
+
+    if not nodes:
+        return content
+
+    # Create a root node to process everything
+    root = LatexGroupNode(parsing_state=ParsingState(), nodelist=nodes)
+
+    # Apply the transformations
+    if strip_comments:
+        root = _strip_comments(root) or root
+    if strip_whitespace:
+        root = _strip_whitespace(root) or root
+    if strip_clutter:
+        root = _strip_clutter(root) or root
+
+    if seek_to_document_node and (document_node := _seek_to_document_node(root)):
+        root = document_node
+
+    # Convert back to string preserving LaTeX structure
+    return root.latex_verbatim()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Expand LaTeX files")
+    parser = argparse.ArgumentParser(description="Strip LaTeX files")
     parser.add_argument(
         "--input",
-        help="Input LaTeX file. If not provided, the stdin is used.",
+        help="Input LaTeX file. If not provided, stdin is used.",
         type=Path,
         required=False,
     )
@@ -213,31 +235,26 @@ def main():
     )
     parser.add_argument(
         "--output",
-        help="Output LaTeX file. If not provided, the output is printed to stdout.",
+        help="Output LaTeX file. If not provided, output is printed to stdout.",
         type=Path,
         required=False,
     )
     args = parser.parse_args()
 
-    # Resolve the input file
+    # Read input
     content = args.input.read_text(encoding="utf-8") if args.input else sys.stdin.read()
 
-    resolved = str(
-        strip(
-            TexSoup(content),
-            strip_comments=args.comments,
-            strip_whitespace=args.whitespace,
-            strip_clutter=args.clutter,
-            seek_to_document_node=args.seek_to_document,
-        )
+    # Process the content
+    result = strip(
+        content,
+        strip_comments=args.comments,
+        strip_whitespace=args.whitespace,
+        strip_clutter=args.strip_clutter,
+        seek_to_document_node=args.seek_to_document,
     )
 
-    # Write the output
+    # Write output
     if args.output:
-        args.output.write_text(resolved, encoding="utf-8")
+        args.output.write_text(result, encoding="utf-8")
     else:
-        print(resolved)
-
-
-if __name__ == "__main__":
-    main()
+        print(result)

@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from ._texsoup_wrapper import TexSoup
 from .expand import expand_latex_file
 from .strip import strip
 
@@ -30,9 +29,8 @@ def convert_latex_to_latex(
     expanded = expand_latex_file(main_file)
 
     # Strip comments and whitespace
-    latex_root = TexSoup(expanded)
     latex_root = strip(
-        latex_root,
+        expanded,
         strip_comments=strip_comments,
         strip_whitespace=strip_whitespace,
         strip_clutter=strip_clutter,

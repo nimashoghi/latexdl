@@ -4,8 +4,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-from ._texsoup_wrapper import TexSoup
-
 
 class ExpandError(Exception):
     pass
@@ -81,7 +79,7 @@ def main():
     if strip_:
         from .strip import strip
 
-        resolved = strip(TexSoup(resolved))
+        resolved = strip(resolved)
 
     resolved = str(resolved)
 
