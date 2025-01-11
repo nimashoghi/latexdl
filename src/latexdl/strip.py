@@ -3,6 +3,6 @@ def strip(content: str) -> str:
 
     return LatexNodes2Text(
         keep_braced_groups=True,
-        keep_inline_math=True,
+        # keep_inline_math=True,
         math_mode="with-delimiters",
     ).latex_to_text(content)
