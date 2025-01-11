@@ -10,7 +10,7 @@ python = "^3.9"
 tqdm = "^4.66.4"
 requests = "*"
 typing-extensions = "*"
-pylatexenc = "^2.10"
+pylatexenc = { version = "3.0a31", allow-prereleases = true }
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "*"
@@ -27,5 +27,3 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 latexdl = "latexdl.main:main"
-latexdl-expand = "latexdl.expand:main"
-latexdl-strip = "latexdl.strip:main"

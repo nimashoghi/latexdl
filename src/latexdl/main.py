@@ -118,26 +118,8 @@ def main():
         default=Path.cwd(),
     )
     parser.add_argument(
-        "--strip-comments",
-        help="Strip comments (latex format only)",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    parser.add_argument(
-        "--strip-whitespace",
-        help="Strip whitespace (latex format only)",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    parser.add_argument(
-        "--strip-clutter",
-        help="Strip clutter (latex format only)",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    parser.add_argument(
-        "--seek-to-document",
-        help="Seek to the document node (latex format only)",
+        "--text",
+        help="Use LaTeX2Text to convert to text",
         action=argparse.BooleanOptionalAction,
         default=True,
     )
@@ -215,20 +197,15 @@ def main():
             expanded = expand_latex_file(main_file)
 
             # Strip comments and whitespace
-            converted_content = strip(
-                expanded,
-                strip_comments=args.strip_comments,
-                strip_whitespace=args.strip_whitespace,
-                strip_clutter=args.strip_clutter,
-                seek_to_document_node=args.seek_to_document,
-            )
+            if args.strip:
+                expanded = strip(expanded)
 
             # Write output
             extension = "tex" if args.format == "latex" else args.format
             output_file_path = output_base / f"{arxiv_id}.{extension}"
             pbar.set_description(f"Writing {arxiv_id} to {output_file_path}")
             with output_file_path.open("w", encoding="utf-8") as f:
-                f.write(converted_content)
+                f.write(expanded)
 
         except Exception as e:
             print(f"Error converting {arxiv_id}: {e}")
