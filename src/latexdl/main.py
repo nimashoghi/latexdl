@@ -11,6 +11,7 @@ from pathlib import Path
 import requests
 from tqdm import tqdm
 
+from ._bibtex import detect_and_collect_bibtex
 from .expand import expand_latex_file
 from .strip import strip
 
@@ -143,7 +144,16 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument(
+        "--bib",
+        help="Include bibliography file content (only works with LaTeX output)",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
     args = parser.parse_args()
+
+    if args.text and args.bib:
+        parser.error("--bib cannot be used with --text")
 
     output_base: Path | None = args.output
     output_stdout = output_base is None
@@ -217,6 +227,10 @@ def main():
                 # Convert to text if requested
                 if args.text:
                     expanded = strip(expanded)
+
+                # Add bibliography content if requested
+                if args.bib and (bib := detect_and_collect_bibtex(output, expanded)):
+                    expanded += f"\n\nBIBLIOGRAPHY\n{bib}"
 
                 # Write output
                 if output_stdout:
