@@ -137,6 +137,12 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument(
+        "--keep-comments",
+        help="Keep comments in the expanded LaTeX file",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
     args = parser.parse_args()
 
     output_base: Path | None = args.output
@@ -201,8 +207,12 @@ def main():
 
             try:
                 pbar.set_description(f"Processing {arxiv_id} latex")
+
                 # Expand the LaTeX file (i.e., resolve imports into 1 large file)
-                expanded = expand_latex_file(main_file)
+                expanded = expand_latex_file(
+                    main_file,
+                    keep_comments=args.keep_comments,
+                )
 
                 # Convert to text if requested
                 if args.text:
