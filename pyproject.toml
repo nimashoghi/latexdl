@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "latexdl"
-version = "0.6.5"
+version = "0.7.0"
 description = ""
 authors = ["Nima Shoghi <nimashoghi@gmail.com>"]
 readme = "README.md"
@@ -11,7 +11,7 @@ tqdm = "^4.66.4"
 requests = "*"
 typing-extensions = "*"
 pylatexenc = "^2"
-bibtexparser = {version = "^2.0.0b8", allow-prereleases = true}
+bibtexparser = { version = "^2.0.0b8", allow-prereleases = true }
 pyahocorasick = "^2.1.0"
 
 [tool.poetry.group.dev.dependencies]
