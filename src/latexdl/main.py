@@ -123,7 +123,7 @@ def main():
         "--text",
         help="Use LaTeX2Text to convert to text",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--redownload-existing",
