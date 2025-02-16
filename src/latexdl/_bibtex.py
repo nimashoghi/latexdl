@@ -44,6 +44,10 @@ def detect_and_collect_bibtex(
         # Parse the file and collect the entries
         entries.update(_parse_bibtex_file(bib_file_path))
 
+    if not entries:
+        log.info("No BibTeX entries found, skipping")
+        return None
+
     # Remove unreferenced keys if requested
     if remove_unreferenced:
         prev_count = len(entries)
