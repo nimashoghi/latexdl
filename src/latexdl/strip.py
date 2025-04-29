@@ -1,23 +1,40 @@
 from __future__ import annotations
 
 import logging
-
-from pylatexenc.latex2text import LatexNodes2Text as _LatexNodes2Text
-from typing_extensions import override
+import subprocess
 
 
-class LatexNodes2Text(_LatexNodes2Text):
-    @override
-    def apply_simplify_repl(self, node, simplify_repl, what):
-        try:
-            return super().apply_simplify_repl(node, simplify_repl, what)
-        except Exception:
-            logging.warning(
-                f"WARNING: Error in configuration: {what} failed its substitution! "
-                "Ignoring the error and continuing."
-            )
-            return ""
+def check_pandoc_installed() -> bool:
+    """Check if pandoc is installed on the system."""
+    try:
+        subprocess.run(["pandoc", "--version"], check=True, stdout=subprocess.PIPE)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
 
 
 def strip(content: str) -> str:
-    return LatexNodes2Text(math_mode="verbatim").latex_to_text(content)
+    # Make sure that pandoc is installed
+    if not check_pandoc_installed():
+        raise RuntimeError(
+            "Pandoc is not installed. Please install it to use this function."
+        )
+
+    # Use pandoc to convert LaTeX to plain text.
+    # Our command is as follows: `pandoc --wrap=none -f latex -t markdown`
+    # The stdin should be the LaTeX content, and the stdout will be the plain text.
+    try:
+        result = subprocess.run(
+            ["pandoc", "--wrap=none", "-f", "latex", "-t", "markdown"],
+            input=content.encode("utf-8"),
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        plain_text = result.stdout.decode("utf-8")
+        return plain_text
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
+        logging.error(f"Failed to strip LaTeX content: {error_msg}")
+        raise RuntimeError(f"Failed to strip LaTeX content: {error_msg}")

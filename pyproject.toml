@@ -9,7 +9,6 @@ dependencies = [
     "tqdm",
     "requests",
     "typing-extensions",
-    "pylatexenc>=2",
     "bibtexparser>=2.0.0b8",
 ]
 

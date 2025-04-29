@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from ._bibtex import detect_and_collect_bibtex
 from .expand import expand_latex_file
-from .strip import strip
+from .strip import check_pandoc_installed, strip
 
 
 def _extract_arxiv_id(package: str) -> str:
@@ -123,10 +123,10 @@ def main():
         required=False,
     )
     parser.add_argument(
-        "--text",
-        help="Use LaTeX2Text to convert to text",
+        "--markdown",
+        help="Use pandoc to convert to markdown",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        required=False,
     )
     parser.add_argument(
         "--redownload-existing",
@@ -154,8 +154,15 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.text and args.bib:
-        parser.error("--bib cannot be used with --text")
+    # If markdown is not set, we will by set the value to True if
+    # the user has pandoc installed.
+    if args.markdown is None:
+        args.markdown = check_pandoc_installed()
+        logging.critical(
+            f"Setting {
+                '--markdown' if args.markdown else '--no-markdown'
+            } because pandoc is {'installed' if args.markdown else 'not installed'}"
+        )
 
     output_base: Path | None = args.output
     output_stdout = output_base is None
@@ -221,24 +228,30 @@ def main():
                 pbar.set_description(f"Processing {arxiv_id} latex")
 
                 # Expand the LaTeX file (i.e., resolve imports into 1 large file)
-                expanded = expand_latex_file(
-                    main_file,
-                    keep_comments=args.keep_comments,
+                expanded_latex = expand_latex_file(
+                    main_file, keep_comments=args.keep_comments
                 )
 
                 # Convert to text if requested
-                if args.text:
-                    expanded = strip(expanded)
+                if args.markdown:
+                    expanded = strip(expanded_latex)
+                else:
+                    expanded = expanded_latex
 
                 # Add bibliography content if requested
-                if args.bib and (bib := detect_and_collect_bibtex(output, expanded)):
-                    expanded += f"\n\nBIBLIOGRAPHY\n{bib}"
+                if args.bib and (
+                    bib := detect_and_collect_bibtex(output, expanded_latex)
+                ):
+                    if args.markdown:
+                        expanded += f"\n\n# References\n\n{bib}"
+                    else:
+                        expanded += f"\n\nREFERENCES\n\n{bib}"
 
                 # Write output
                 if output_stdout:
                     print(expanded)
                 else:
-                    extension = "txt" if args.text else "tex"
+                    extension = "md" if args.markdown else "tex"
                     output_file_path = output_base / f"{arxiv_id}.{extension}"
                     pbar.set_description(f"Writing {arxiv_id} to {output_file_path}")
                     with output_file_path.open("w", encoding="utf-8") as f:
