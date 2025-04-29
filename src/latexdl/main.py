@@ -148,9 +148,9 @@ def main():
     )
     parser.add_argument(
         "--bib",
-        help="Include bibliography file content (only works with LaTeX output)",
+        help="Include bibliography file content",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=True,
     )
     args = parser.parse_args()
 
