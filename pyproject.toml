@@ -1,31 +1,47 @@
-[tool.poetry]
+[project]
 name = "latexdl"
-version = "0.7.1"
+version = "0.8.0"
 description = ""
-authors = ["Nima Shoghi <nimashoghi@gmail.com>"]
+authors = [{ name = "Nima Shoghi", email = "nimashoghi@gmail.com" }]
+requires-python = ">=3.10,<4.0"
 readme = "README.md"
+dependencies = [
+    "tqdm",
+    "requests",
+    "typing-extensions",
+    "pylatexenc>=2",
+    "bibtexparser>=2.0.0b8",
+    "pyahocorasick>=2.1.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.9"
-tqdm = "^4.66.4"
-requests = "*"
-typing-extensions = "*"
-pylatexenc = "^2"
-bibtexparser = { version = "^2.0.0b8", allow-prereleases = true }
-pyahocorasick = "^2.1.0"
+[project.urls]
+homepage = "https://github.com/nimashoghi/latexdl"
+
+[project.scripts]
+latexdl = "latexdl.main:main"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "*"
 rich = "*"
 ruff = "*"
-pyright = "*"
+basedpyright = "*"
 pytest = "*"
 hypothesis = "*"
 pytest-cov = "*"
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.poetry.scripts]
-latexdl = "latexdl.main:main"
+[tool.basedpyright]
+typeCheckingMode = "standard"
+deprecateTypingAliases = true
+strictListInference = true
+strictDictionaryInference = true
+strictSetInference = true
+reportPrivateImportUsage = "none"
+reportMatchNotExhaustive = "warning"
+reportOverlappingOverload = "warning"
+reportUnnecessaryTypeIgnoreComment = "warning"
+reportImplicitOverride = "warning"
+reportIncompatibleMethodOverride = "information"
