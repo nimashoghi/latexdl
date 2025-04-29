@@ -29,17 +29,18 @@ def detect_and_collect_bibtex(
     expanded_contents: str,
     *,
     remove_unreferenced: bool = True,
+    markdown: bool = False,
 ):
     """
     Given a base directory and expanded LaTeX contents, extract the included
-    BibTeX files and return the contents of the merged BibTeX file, in a
-    format suitable for LLMs.
+    BibTeX files and return the contents of the merged BibTeX file.
 
     Args:
         base_dir (Path): The base directory to search for the BibTeX file.
         expanded_contents (str): The expanded LaTeX contents.
         remove_unreferenced (bool): Whether to remove unreferenced BibTeX
             entries from the merged file.
+        markdown (bool): Whether to format output in markdown style.
 
     Returns:
         str | None: The contents of the merged BibTeX file, or None if no
@@ -65,10 +66,10 @@ def detect_and_collect_bibtex(
             continue
 
         # Parse the file and collect the entries
-        entries.update(_parse_bibtex_file(bib_path))
+        entries.update(_parse_bibtex_file(bib_path, markdown))
 
     # Check for manual bibliography environment
-    manual_bibs = _extract_manual_bibliography(expanded_contents)
+    manual_bibs = _extract_manual_bibliography(expanded_contents, markdown)
     if manual_bibs:
         entries.update(manual_bibs)
 
@@ -91,10 +92,15 @@ def detect_and_collect_bibtex(
 
     # Merge the entries into a single BibTeX file
     lines = sorted(entries.items(), key=lambda x: x[0])
-    return "\n".join(content for _, content in lines)
+    if markdown:
+        return "\n".join(content for _, content in lines)
+    else:
+        return "\n".join(content for _, content in lines)
 
 
-def _extract_manual_bibliography(content: str) -> dict[str, str]:
+def _extract_manual_bibliography(
+    content: str, markdown: bool = False
+) -> dict[str, str]:
     """Extract entries from manual thebibliography environment."""
     entries = {}
 
@@ -114,7 +120,10 @@ def _extract_manual_bibliography(content: str) -> dict[str, str]:
     ):
         key = bibitem.group(1)
         text = bibitem.group(2).strip()
-        entries[key] = f"- @{key}: {text}"
+        if markdown:
+            entries[key] = f"* `[@{key}]` {text}"
+        else:
+            entries[key] = f"[@{key}] {text}"
 
     return entries
 
@@ -136,11 +145,13 @@ def _remove_unreferenced_keys(entries: dict[str, str], expanded_contents: str):
     return entries
 
 
-def _parse_bibtex_file(bib_file: Path):
+def _parse_bibtex_file(bib_file: Path, markdown: bool = False):
     try:
         library = bibtexparser.parse_file(str(bib_file.absolute()))
         for entry in library.entries:
-            if not (key := entry.key) or not (content := _entry_to_text(key, entry)):
+            if not (key := entry.key) or not (
+                content := _entry_to_text(key, entry, markdown)
+            ):
                 continue
 
             yield key, content
@@ -148,23 +159,76 @@ def _parse_bibtex_file(bib_file: Path):
         log.warning(f"Failed to parse BibTeX file {bib_file}", exc_info=True)
 
 
-def _entry_to_text(key: str, entry: bibtexparser.model.Entry) -> str | None:
+def _entry_to_text(
+    key: str, entry: bibtexparser.model.Entry, markdown: bool = False
+) -> str | None:
+    """Format a BibTeX entry in IEEE-like style."""
     if not (title := entry.get("title")):
         return None
 
-    # Format authors if available
+    # Format authors (IEEE style: A. Author, B. Author, and C. Author)
     authors = ""
     if author_field := entry.get("author"):
-        authors = f"{author_field.value}, "
+        # Split authors and format them
+        author_list = [a.strip() for a in author_field.value.split(" and ")]
+        formatted_authors = []
 
-    contents: str = f'"{title.value}"'
+        for author in author_list:
+            parts = author.split(",")
+            if len(parts) == 2:  # Last, First format
+                last, first = parts
+                initials = " ".join([f"{n[0]}." for n in first.strip().split()])
+                formatted_authors.append(f"{last.strip()}, {initials}")
+            else:  # First Last format
+                name_parts = author.split()
+                if len(name_parts) > 1:
+                    last = name_parts[-1]
+                    first_initials = " ".join([f"{n[0]}." for n in name_parts[:-1]])
+                    formatted_authors.append(f"{last}, {first_initials}")
+                else:
+                    formatted_authors.append(author)
+
+        if len(formatted_authors) == 1:
+            authors = formatted_authors[0]
+        elif len(formatted_authors) == 2:
+            authors = f"{formatted_authors[0]} and {formatted_authors[1]}"
+        else:
+            authors = (
+                ", ".join(formatted_authors[:-1]) + f", and {formatted_authors[-1]}"
+            )
+
+    # Title in quotes
+    title_text = f'"{title.value}"'
+
+    # Publication info
+    pub_info = ""
+    entry_type = entry.entry_type
+
+    if entry_type == "article":
+        if journal := entry.get("journal"):
+            pub_info += f", {journal.value}"
+            if volume := entry.get("volume"):
+                pub_info += f", vol. {volume.value}"
+                if number := entry.get("number"):
+                    pub_info += f", no. {number.value}"
+            if pages := entry.get("pages"):
+                pub_info += f", pp. {pages.value}"
+    elif entry_type == "book":
+        if publisher := entry.get("publisher"):
+            pub_info += f", {publisher.value}"
+    elif entry_type == "inproceedings" or entry_type == "conference":
+        if booktitle := entry.get("booktitle"):
+            pub_info += f", in {booktitle.value}"
+
+    # Add year
     if year := entry.get("year"):
-        contents += f" ({year.value})"
+        pub_info += f", {year.value}"
 
-    # Add journal/booktitle if available
-    if journal := entry.get("journal"):
-        contents += f", {journal.value}"
-    elif booktitle := entry.get("booktitle"):
-        contents += f", In: {booktitle.value}"
+    # Combine all parts
+    citation = f"{authors}, {title_text}{pub_info}."
 
-    return f"- @{key}: {authors}{contents}"
+    # Format according to markdown preference
+    if markdown:
+        return f"* `[@{key}]` {citation}"
+    else:
+        return f"[@{key}] {citation}"

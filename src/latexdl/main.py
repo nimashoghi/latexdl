@@ -240,7 +240,11 @@ def main():
 
                 # Add bibliography content if requested
                 if args.bib and (
-                    bib := detect_and_collect_bibtex(output, expanded_latex)
+                    bib := detect_and_collect_bibtex(
+                        output,
+                        expanded_latex,
+                        markdown=args.markdown,
+                    )
                 ):
                     if args.markdown:
                         expanded += f"\n\n# References\n\n{bib}"
