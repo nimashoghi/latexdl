@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 
 from pylatexenc.latex2text import LatexNodes2Text as _LatexNodes2Text
