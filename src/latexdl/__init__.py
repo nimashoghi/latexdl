@@ -6,6 +6,9 @@ LaTeX files from arXiv to Markdown.
 """
 
 from __future__ import annotations
+
+from .main import process_packages as process_packages
+
 try:
     from importlib.metadata import PackageNotFoundError, version
 except ImportError:
