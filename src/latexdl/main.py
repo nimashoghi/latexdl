@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
 import logging
 import re
-import shutil
 import tarfile
 import tempfile
 import urllib.parse
@@ -43,28 +41,46 @@ def _extract_arxiv_id(package: str) -> str:
     return arxiv_id
 
 
-def _download_and_extract(
+def download_arxiv_source(
     arxiv_id: str,
-    output: Path,
+    temp_dir: Path,
     redownload_existing: bool = False,
-):
-    fpath = output / f"{arxiv_id}.tar.gz"
+) -> Path:
+    """
+    Download and extract arXiv source files.
+
+    Args:
+        arxiv_id: The arXiv ID to download
+        temp_dir: Directory to store the downloaded and extracted files
+        redownload_existing: Whether to redownload if archives already exist
+
+    Returns:
+        Path to the directory containing extracted files
+
+    Raises:
+        requests.HTTPError: If downloading fails
+    """
+    output_dir = temp_dir / arxiv_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fpath = temp_dir / f"{arxiv_id}.tar.gz"
     if fpath.exists() and not redownload_existing:
         logging.info(f"Package {arxiv_id} already downloaded, skipping")
-        return
+    else:
+        url = f"https://arxiv.org/src/{arxiv_id}"
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
 
-    url = f"https://arxiv.org/src/{arxiv_id}"
-    response = requests.get(url, stream=True)
-    response.raise_for_status()
-
-    # Save the response to a file
-    with fpath.open("wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
+        # Save the response to a file
+        with fpath.open("wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
 
     # Extract the tarball
     with tarfile.open(fpath, "r:gz") as tar:
-        tar.extractall(output)
+        tar.extractall(output_dir)
+
+    return output_dir
 
 
 def _find_main_latex_file(directory: Path) -> Path | None:
@@ -110,153 +126,108 @@ def _find_main_latex_file(directory: Path) -> Path | None:
     return potential_main_files[0][0] if potential_main_files else None
 
 
-def process_packages(
-    packages: list[str],
-    output_directory: Path | None = None,
-    markdown: bool | None = None,
+def convert_arxiv_latex(
+    arxiv_id_or_url: str,
+    *,
+    markdown: bool = False,
     redownload_existing: bool = False,
-    force_overwrite: bool = False,
     keep_comments: bool = False,
-    bib: bool = True,
-    progress_bar: bool = True,
-) -> dict[str, str | Path]:
+    include_bibliography: bool = True,
+) -> str:
     """
-    Process arXiv packages to download and convert LaTeX files.
+    Convert an arXiv paper to expanded LaTeX or markdown.
 
     Args:
-        packages: list of arXiv IDs or URLs
-        output_directory: Directory to save the files (None for in-memory output)
-        markdown: Whether to convert to markdown (None to auto-detect based on pandoc)
-        redownload_existing: Whether to redownload existing packages
-        force_overwrite: Whether to overwrite existing directories without prompting
+        arxiv_id_or_url: arXiv ID or URL of the paper
+        markdown: Whether to convert to markdown (requires pandoc)
+        redownload_existing: Whether to redownload if archives already exist
         keep_comments: Whether to keep comments in the expanded LaTeX
-        bib: Whether to include bibliography content
-        progress_bar: Whether to display a progress bar
+        include_bibliography: Whether to include bibliography content
 
     Returns:
-        Dictionary mapping arXiv IDs to either file paths (if output_directory is provided)
-        or content strings (if output_directory is None)
+        The expanded LaTeX or converted markdown content as a string
+
+    Raises:
+        RuntimeError: If the main LaTeX file cannot be found
+        ValueError: If the arXiv ID format is invalid
     """
-    # If markdown is not set, check if pandoc is installed
-    if markdown is None:
-        markdown = check_pandoc_installed()
-        logging.info(
-            f"Using {'markdown' if markdown else 'LaTeX'} output format (pandoc is {'installed' if markdown else 'not installed'})"
+    # Extract arXiv ID
+    arxiv_id = _extract_arxiv_id(arxiv_id_or_url)
+
+    # Create temporary directory for downloads and extraction
+    with tempfile.TemporaryDirectory() as temp_dir_str:
+        temp_dir = Path(temp_dir_str)
+
+        # Download and extract
+        src_dir = download_arxiv_source(arxiv_id, temp_dir, redownload_existing)
+
+        # Find main LaTeX file
+        main_file = _find_main_latex_file(src_dir)
+        if main_file is None:
+            raise RuntimeError(f"Could not find main LaTeX file for {arxiv_id}")
+
+        # Expand LaTeX
+        expanded_latex = expand_latex_file(main_file, keep_comments=keep_comments)
+
+        # Convert to markdown if requested
+        content = strip(expanded_latex) if markdown else expanded_latex
+
+        # Add bibliography if requested
+        if include_bibliography:
+            bib_content = detect_and_collect_bibtex(
+                src_dir, expanded_latex, markdown=markdown
+            )
+            if bib_content:
+                sep = "\n\n# References\n\n" if markdown else "\n\nREFERENCES\n\n"
+                content += sep + bib_content
+
+        return content
+
+
+def batch_convert_arxiv_papers(
+    arxiv_ids_or_urls: list[str],
+    *,
+    markdown: bool = False,
+    redownload_existing: bool = False,
+    keep_comments: bool = False,
+    include_bibliography: bool = True,
+    show_progress: bool = True,
+) -> dict[str, str]:
+    """
+    Convert multiple arXiv papers to expanded LaTeX or markdown.
+
+    Args:
+        arxiv_ids_or_urls: List of arXiv IDs or URLs
+        markdown: Whether to convert to markdown (requires pandoc)
+        redownload_existing: Whether to redownload if archives already exist
+        keep_comments: Whether to keep comments in the expanded LaTeX
+        include_bibliography: Whether to include bibliography content
+        show_progress: Whether to show a progress bar
+
+    Returns:
+        Dictionary mapping arXiv IDs to their converted content
+    """
+    results = {}
+    papers = arxiv_ids_or_urls
+
+    if show_progress:
+        papers = tqdm(papers, desc="Converting papers", unit="paper")
+
+    for paper in papers:
+        arxiv_id = _extract_arxiv_id(paper)
+
+        if show_progress and isinstance(papers, tqdm):
+            papers.set_description(f"Converting {arxiv_id}")
+
+        content = convert_arxiv_latex(
+            paper,
+            markdown=markdown,
+            redownload_existing=redownload_existing,
+            keep_comments=keep_comments,
+            include_bibliography=include_bibliography,
         )
 
-    output_base: Path | None = output_directory
-    output_stdout = output_base is None
-    results = {}
-
-    with contextlib.ExitStack() as stack:
-        if output_base is None:
-            output_base = Path(stack.enter_context(tempfile.TemporaryDirectory()))
-
-        # Resolve the packages
-        arxiv_ids: list[str] = []
-        for package in packages:
-            assert isinstance(package, str), "Package must be a string"
-            arxiv_ids.append(_extract_arxiv_id(package))
-
-        # Process the packages
-        iterator = arxiv_ids
-        pbar = None
-        if progress_bar:
-            iterator = pbar = tqdm(arxiv_ids)
-        for arxiv_id in iterator:
-            output = output_base / arxiv_id
-
-            # If the package dir exists, handle according to force_overwrite
-            if output.exists():
-                logging.info(f"Output path {output} already exists")
-                if not output.is_dir():
-                    raise ValueError(f"Output path {output} is not a directory")
-
-                if force_overwrite:
-                    # Remove the directory
-                    logging.warning(
-                        f"Removing {output} because of force_overwrite=True"
-                    )
-                    shutil.rmtree(output)
-                else:
-                    # In programmatic mode, we skip instead of asking for input
-                    if not output_stdout:
-                        logging.warning(
-                            f"Skipping {arxiv_id} (directory exists and force_overwrite=False)"
-                        )
-                        continue
-                    else:
-                        # For stdout mode, we can still process
-                        pass
-
-            # Create the directory
-            output.mkdir(parents=True, exist_ok=True)
-
-            # Download and extract the package
-            if pbar is not None:
-                pbar.set_description(f"Downloading {arxiv_id}")
-            try:
-                _download_and_extract(
-                    arxiv_id, output, redownload_existing=redownload_existing
-                )
-            except IOError:
-                logging.error(f"Error downloading/extracting {arxiv_id}", exc_info=True)
-                continue
-
-            # Find the main LaTeX file in the extracted directory
-            if (main_file := _find_main_latex_file(output)) is None:
-                logging.error(
-                    f"Could not find the main LaTeX for ID {arxiv_id} (output: {output})"
-                )
-                continue
-
-            logging.info(f"Resolved main LaTeX file: {main_file}")
-
-            try:
-                if pbar:
-                    pbar.set_description(f"Processing {arxiv_id} latex")
-
-                # Expand the LaTeX file (i.e., resolve imports into 1 large file)
-                expanded_latex = expand_latex_file(
-                    main_file, keep_comments=keep_comments
-                )
-
-                # Convert to text if requested
-                if markdown:
-                    expanded = strip(expanded_latex)
-                else:
-                    expanded = expanded_latex
-
-                # Add bibliography content if requested
-                if bib and (
-                    bib_content := detect_and_collect_bibtex(
-                        output,
-                        expanded_latex,
-                        markdown=markdown,
-                    )
-                ):
-                    if markdown:
-                        expanded += f"\n\n# References\n\n{bib_content}"
-                    else:
-                        expanded += f"\n\nREFERENCES\n\n{bib_content}"
-
-                # Store results based on output mode
-                if output_stdout:
-                    results[arxiv_id] = expanded
-                else:
-                    extension = "md" if markdown else "tex"
-                    output_file_path = output_base / f"{arxiv_id}.{extension}"
-                    if pbar:
-                        pbar.set_description(
-                            f"Writing {arxiv_id} to {output_file_path}"
-                        )
-                    with output_file_path.open("w", encoding="utf-8") as f:
-                        f.write(expanded)
-                    results[arxiv_id] = output_file_path
-
-            except IOError:
-                logging.error(f"Error converting {arxiv_id}", exc_info=True)
-                continue
+        results[arxiv_id] = content
 
     return results
 
@@ -264,8 +235,8 @@ def process_packages(
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    parser = argparse.ArgumentParser(description="Download LaTeX packages")
-    parser.add_argument("packages", nargs="+", help="Packages to download", type=str)
+    parser = argparse.ArgumentParser(description="Download and convert arXiv papers")
+    parser.add_argument("papers", nargs="+", help="arXiv IDs or URLs", type=str)
     parser.add_argument(
         "--output",
         "-o",
@@ -305,19 +276,41 @@ def main():
     )
     args = parser.parse_args()
 
-    # Call the process_packages function with command-line arguments
-    results = process_packages(
-        packages=args.packages,
-        output_directory=args.output,
+    # Determine markdown format
+    if args.markdown is None:
+        args.markdown = check_pandoc_installed()
+
+    # Convert the papers
+    results = batch_convert_arxiv_papers(
+        args.papers,
         markdown=args.markdown,
         redownload_existing=args.redownload_existing,
-        force_overwrite=args.force_overwrite,
         keep_comments=args.keep_comments,
-        bib=args.bib,
+        include_bibliography=args.bib,
     )
 
-    # Print to stdout if no output directory was specified
-    if args.output is None:
+    # Handle output based on command-line arguments
+    if args.output:
+        # Create output directory
+        args.output.mkdir(parents=True, exist_ok=True)
+
+        # Write each result to a file
+        for arxiv_id, content in results.items():
+            ext = "md" if args.markdown else "tex"
+            output_file = args.output / f"{arxiv_id}.{ext}"
+
+            # Check if file exists and handle overwrite
+            if output_file.exists() and not args.force_overwrite:
+                logging.info(
+                    f"File {output_file} already exists, skipping (use --force-overwrite to overwrite)"
+                )
+                continue
+
+            with output_file.open("w", encoding="utf-8") as f:
+                f.write(content)
+            logging.info(f"Wrote {output_file}")
+    else:
+        # Print to stdout if no output directory specified
         for arxiv_id, content in results.items():
             print(content)
 

@@ -7,7 +7,8 @@ LaTeX files from arXiv to Markdown.
 
 from __future__ import annotations
 
-from .main import process_packages as process_packages
+from .main import batch_convert_arxiv_papers as batch_convert_arxiv_papers
+from .main import download_arxiv_source as download_arxiv_source
 
 try:
     from importlib.metadata import PackageNotFoundError, version
