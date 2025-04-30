@@ -12,6 +12,7 @@ import requests
 from tqdm import tqdm
 
 from ._bibtex import detect_and_collect_bibtex
+from ._metadata import fetch_arxiv_metadata
 from .expand import expand_latex_file
 from .strip import check_pandoc_installed, strip
 
@@ -133,6 +134,7 @@ def convert_arxiv_latex(
     redownload_existing: bool = False,
     keep_comments: bool = False,
     include_bibliography: bool = True,
+    include_metadata: bool = True,
 ) -> str:
     """
     Convert an arXiv paper to expanded LaTeX or markdown.
@@ -143,6 +145,7 @@ def convert_arxiv_latex(
         redownload_existing: Whether to redownload if archives already exist
         keep_comments: Whether to keep comments in the expanded LaTeX
         include_bibliography: Whether to include bibliography content
+        include_metadata: Whether to include paper metadata (title, authors, etc.)
 
     Returns:
         The expanded LaTeX or converted markdown content as a string
@@ -181,6 +184,18 @@ def convert_arxiv_latex(
                 sep = "\n\n# References\n\n" if markdown else "\n\nREFERENCES\n\n"
                 content += sep + bib_content
 
+        # Add metadata if requested
+        if include_metadata:
+            if (metadata := fetch_arxiv_metadata(arxiv_id)) is not None:
+                metadata_content = (
+                    metadata.format_for_markdown()
+                    if markdown
+                    else metadata.format_for_latex()
+                )
+                content = metadata_content + content
+            else:
+                logging.warning(f"Could not fetch metadata for {arxiv_id}")
+
         return content
 
 
@@ -191,6 +206,7 @@ def batch_convert_arxiv_papers(
     redownload_existing: bool = False,
     keep_comments: bool = False,
     include_bibliography: bool = True,
+    include_metadata: bool = True,
     show_progress: bool = True,
 ) -> dict[str, str]:
     """
@@ -202,6 +218,7 @@ def batch_convert_arxiv_papers(
         redownload_existing: Whether to redownload if archives already exist
         keep_comments: Whether to keep comments in the expanded LaTeX
         include_bibliography: Whether to include bibliography content
+        include_metadata: Whether to include paper metadata (title, authors, etc.)
         show_progress: Whether to show a progress bar
 
     Returns:
@@ -225,6 +242,7 @@ def batch_convert_arxiv_papers(
             redownload_existing=redownload_existing,
             keep_comments=keep_comments,
             include_bibliography=include_bibliography,
+            include_metadata=include_metadata,
         )
 
         results[arxiv_id] = content
@@ -274,6 +292,12 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument(
+        "--metadata",
+        help="Include paper metadata (title, authors, etc.)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     args = parser.parse_args()
 
     # Determine markdown format
@@ -287,6 +311,7 @@ def main():
         redownload_existing=args.redownload_existing,
         keep_comments=args.keep_comments,
         include_bibliography=args.bib,
+        include_metadata=args.metadata,
     )
 
     # Handle output based on command-line arguments

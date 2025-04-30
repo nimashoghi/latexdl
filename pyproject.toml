@@ -10,6 +10,7 @@ dependencies = [
     "requests",
     "typing-extensions",
     "bibtexparser>=2.0.0b8",
+    "arxiv",
 ]
 
 [project.urls]
