@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import re
 import tarfile
@@ -135,6 +136,7 @@ def convert_arxiv_latex(
     keep_comments: bool = False,
     include_bibliography: bool = True,
     include_metadata: bool = True,
+    working_dir: str | Path | None = None,
 ) -> tuple[str, ArxivMetadata | None]:
     """
     Convert an arXiv paper to expanded LaTeX or markdown.
@@ -146,6 +148,7 @@ def convert_arxiv_latex(
         keep_comments: Whether to keep comments in the expanded LaTeX
         include_bibliography: Whether to include bibliography content
         include_metadata: Whether to include paper metadata (title, authors, etc.)
+        working_dir: Optional working directory for temporary files
 
     Returns:
         The expanded LaTeX or converted markdown content as a string, and
@@ -160,8 +163,12 @@ def convert_arxiv_latex(
     arxiv_id = _extract_arxiv_id(arxiv_id_or_url)
 
     # Create temporary directory for downloads and extraction
-    with tempfile.TemporaryDirectory() as temp_dir_str:
-        temp_dir = Path(temp_dir_str)
+    with contextlib.ExitStack() as stack:
+        if working_dir is None:
+            temp_dir = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+        else:
+            temp_dir = Path(working_dir) / arxiv_id
+            temp_dir.mkdir(parents=True, exist_ok=True)
 
         # Download and extract
         src_dir = download_arxiv_source(arxiv_id, temp_dir, redownload_existing)
@@ -211,6 +218,7 @@ def batch_convert_arxiv_papers(
     include_bibliography: bool = True,
     include_metadata: bool = True,
     show_progress: bool = True,
+    working_dir: str | Path | None = None,
 ) -> dict[str, tuple[str, ArxivMetadata | None]]:
     """
     Convert multiple arXiv papers to expanded LaTeX or markdown.
@@ -223,6 +231,7 @@ def batch_convert_arxiv_papers(
         include_bibliography: Whether to include bibliography content
         include_metadata: Whether to include paper metadata (title, authors, etc.)
         show_progress: Whether to show a progress bar
+        working_dir: Optional working directory for temporary files
 
     Returns:
         Dictionary mapping arXiv IDs to their converted content and metadata
@@ -246,6 +255,7 @@ def batch_convert_arxiv_papers(
             keep_comments=keep_comments,
             include_bibliography=include_bibliography,
             include_metadata=include_metadata,
+            working_dir=working_dir,
         )
 
         results[arxiv_id] = (content, metadata)
