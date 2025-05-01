@@ -137,6 +137,7 @@ def convert_arxiv_latex(
     include_bibliography: bool = True,
     include_metadata: bool = True,
     working_dir: str | Path | None = None,
+    pandoc_timeout: int = 60,
 ) -> tuple[str, ArxivMetadata | None]:
     """
     Convert an arXiv paper to expanded LaTeX or markdown.
@@ -149,6 +150,7 @@ def convert_arxiv_latex(
         include_bibliography: Whether to include bibliography content
         include_metadata: Whether to include paper metadata (title, authors, etc.)
         working_dir: Optional working directory for temporary files
+        pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
 
     Returns:
         The expanded LaTeX or converted markdown content as a string, and
@@ -181,7 +183,11 @@ def convert_arxiv_latex(
         expanded_latex = expand_latex_file(main_file, keep_comments=keep_comments)
 
         # Convert to markdown if requested
-        content = strip(expanded_latex) if markdown else expanded_latex
+        content = (
+            strip(expanded_latex, timeout=pandoc_timeout)
+            if markdown
+            else expanded_latex
+        )
 
         # Add bibliography if requested
         if include_bibliography and (
@@ -221,6 +227,7 @@ def batch_convert_arxiv_papers(
     include_metadata: bool = True,
     show_progress: bool = True,
     working_dir: str | Path | None = None,
+    pandoc_timeout: int = 60,
 ) -> dict[str, tuple[str, ArxivMetadata | None]]:
     """
     Convert multiple arXiv papers to expanded LaTeX or markdown.
@@ -234,6 +241,7 @@ def batch_convert_arxiv_papers(
         include_metadata: Whether to include paper metadata (title, authors, etc.)
         show_progress: Whether to show a progress bar
         working_dir: Optional working directory for temporary files
+        pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
 
     Returns:
         Dictionary mapping arXiv IDs to their converted content and metadata
@@ -258,6 +266,7 @@ def batch_convert_arxiv_papers(
             include_bibliography=include_bibliography,
             include_metadata=include_metadata,
             working_dir=working_dir,
+            pandoc_timeout=pandoc_timeout,
         )
 
         results[arxiv_id] = (content, metadata)
@@ -313,6 +322,12 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument(
+        "--pandoc-timeout",
+        help="Maximum execution time for pandoc in seconds (default: 60)",
+        type=int,
+        default=60,
+    )
     args = parser.parse_args()
 
     # Determine markdown format
@@ -327,6 +342,7 @@ def main():
         keep_comments=args.keep_comments,
         include_bibliography=args.bib,
         include_metadata=args.metadata,
+        pandoc_timeout=args.pandoc_timeout,
     )
 
     # Handle output based on command-line arguments

@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import subprocess
 
+log = logging.getLogger(__name__)
+
 
 def check_pandoc_installed() -> bool:
     """Check if pandoc is installed on the system."""
@@ -13,7 +15,20 @@ def check_pandoc_installed() -> bool:
         return False
 
 
-def strip(content: str) -> str:
+def strip(content: str, timeout: int = 60) -> str:
+    """Strips LaTeX content to plain text using pandoc.
+
+    Args:
+        content: The LaTeX content to strip.
+        timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
+
+    Returns:
+        The stripped plain text content.
+
+    Raises:
+        RuntimeError: If pandoc is not installed or fails to process the content.
+        subprocess.TimeoutExpired: If the pandoc process times out.
+    """
     # Make sure that pandoc is installed
     if not check_pandoc_installed():
         raise RuntimeError(
@@ -30,11 +45,14 @@ def strip(content: str) -> str:
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            timeout=timeout,
         )
 
         plain_text = result.stdout.decode("utf-8")
         return plain_text
+    except subprocess.TimeoutExpired:
+        log.error(f"Pandoc process timed out after {timeout} seconds")
+        raise
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
-        logging.error(f"Failed to strip LaTeX content: {error_msg}")
         raise RuntimeError(f"Failed to strip LaTeX content: {error_msg}")
