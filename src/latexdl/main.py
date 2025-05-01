@@ -174,8 +174,7 @@ def convert_arxiv_latex(
         src_dir = download_arxiv_source(arxiv_id, temp_dir, redownload_existing)
 
         # Find main LaTeX file
-        main_file = _find_main_latex_file(src_dir)
-        if main_file is None:
+        if (main_file := _find_main_latex_file(src_dir)) is None:
             raise RuntimeError(f"Could not find main LaTeX file for {arxiv_id}")
 
         # Expand LaTeX
@@ -185,13 +184,16 @@ def convert_arxiv_latex(
         content = strip(expanded_latex) if markdown else expanded_latex
 
         # Add bibliography if requested
-        if include_bibliography:
-            bib_content = detect_and_collect_bibtex(
-                src_dir, expanded_latex, markdown=markdown
+        if include_bibliography and (
+            bib_content := detect_and_collect_bibtex(
+                src_dir,
+                expanded_latex,
+                main_tex_path=main_file,
+                markdown=markdown,
             )
-            if bib_content:
-                sep = "\n\n# References\n\n" if markdown else "\n\nREFERENCES\n\n"
-                content += sep + bib_content
+        ):
+            sep = "\n\n# References\n\n" if markdown else "\n\nREFERENCES\n\n"
+            content += sep + bib_content
 
         # Add metadata if requested
         metadata = None

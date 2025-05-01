@@ -28,6 +28,7 @@ def detect_and_collect_bibtex(
     base_dir: Path,
     expanded_contents: str,
     *,
+    main_tex_path: Path | None = None,
     remove_unreferenced: bool = True,
     markdown: bool = False,
 ):
@@ -38,6 +39,8 @@ def detect_and_collect_bibtex(
     Args:
         base_dir (Path): The base directory to search for the BibTeX file.
         expanded_contents (str): The expanded LaTeX contents.
+        main_tex_path (Path | None): Path to the main LaTeX file, used to look for a .bbl file
+            with the same basename if no .bib files are found.
         remove_unreferenced (bool): Whether to remove unreferenced BibTeX
             entries from the merged file.
         markdown (bool): Whether to format output in markdown style.
@@ -73,6 +76,24 @@ def detect_and_collect_bibtex(
     if manual_bibs:
         entries.update(manual_bibs)
 
+    # If no entries found in .bib files or thebibliography environment,
+    # try to find a .bbl file with the same basename as the main tex file
+    if not entries and main_tex_path is not None:
+        bbl_path = main_tex_path.with_suffix(".bbl")
+        if bbl_path.exists():
+            log.info(f"No .bib files found, using .bbl file: {bbl_path}")
+            try:
+                with open(bbl_path, "r", encoding="utf-8") as f:
+                    bbl_content = f.read()
+
+                # Extract bibliography entries from the .bbl file
+                bbl_entries = _extract_bbl_bibliography(bbl_content, markdown)
+                if bbl_entries:
+                    entries.update(bbl_entries)
+                    log.info(f"Extracted {len(bbl_entries)} entries from .bbl file")
+            except Exception as e:
+                log.warning(f"Error reading .bbl file {bbl_path}: {e}")
+
     # If no entries found, return None
     if not entries:
         log.info("No BibTeX entries found, skipping")
@@ -101,7 +122,7 @@ def detect_and_collect_bibtex(
 def _extract_manual_bibliography(
     content: str, markdown: bool = False
 ) -> dict[str, str]:
-    """Extract entries from manual thebibliography environment."""
+    """Extract entries from manual thebibliography environment and clean formatting."""
     entries = {}
 
     # Find the thebibliography environment
@@ -119,13 +140,141 @@ def _extract_manual_bibliography(
         re.DOTALL,
     ):
         key = bibitem.group(1)
-        text = bibitem.group(2).strip()
+        raw_text = bibitem.group(2).strip()
+
+        # Clean the text by removing LaTeX formatting
+        cleaned_text = _clean_latex_formatting(raw_text)
+
         if markdown:
-            entries[key] = f"* `[@{key}]` {text}"
+            entries[key] = f"* `[@{key}]` {cleaned_text}"
         else:
-            entries[key] = f"[@{key}] {text}"
+            entries[key] = f"[@{key}] {cleaned_text}"
 
     return entries
+
+
+def _extract_bbl_bibliography(
+    bbl_content: str, markdown: bool = False
+) -> dict[str, str]:
+    """Extract entries from a .bbl file and strip LaTeX formatting.
+
+    Args:
+        bbl_content: Content of the .bbl file
+        markdown: Whether to format output in markdown style
+
+    Returns:
+        Dictionary mapping citation keys to formatted citation text
+    """
+    entries = {}
+
+    # Check if the .bbl file contains a thebibliography environment
+    match = re.search(
+        r"\\begin{thebibliography}.*?\\end{thebibliography}", bbl_content, re.DOTALL
+    )
+    if not match:
+        return entries
+
+    # Extract bibitem entries from the bbl file
+    bib_content = match.group(0)
+    for bibitem in re.finditer(
+        r"\\bibitem(?:\[.*?\])?{(.*?)}(.*?)(?=\\bibitem|\\end{thebibliography})",
+        bib_content,
+        re.DOTALL,
+    ):
+        key = bibitem.group(1)
+        raw_text = bibitem.group(2).strip()
+
+        # Clean the text by removing LaTeX formatting
+        cleaned_text = _clean_latex_formatting(raw_text)
+
+        if markdown:
+            entries[key] = f"* `[@{key}]` {cleaned_text}"
+        else:
+            entries[key] = f"[@{key}] {cleaned_text}"
+
+    return entries
+
+
+def _clean_latex_formatting(text: str) -> str:
+    """Remove LaTeX formatting commands and consolidate text to a single line.
+
+    Args:
+        text: Text containing LaTeX formatting commands
+
+    Returns:
+        Cleaned text with LaTeX formatting removed and on a single line
+    """
+    # Replace common LaTeX commands
+    replacements = [
+        # Replace newblock with space
+        (r"\\newblock\s*", " "),
+        # Replace emph and textit with plain text
+        (r"\\emph{(.*?)}", r"\1"),
+        (r"\\textit{(.*?)}", r"\1"),
+        (r"\\textbf{(.*?)}", r"\1"),
+        # Remove formatting for special characters like tilde, etc.
+        (r"~", " "),
+        (r"``|''|\"|``|''", '"'),
+        # Clean up special brackets and braces
+        (r"{\\\"(.)}", r"\1"),
+        (r"{\\\'(.)}", r"\1"),
+        (r"{\\`(.)}", r"\1"),
+        (r"{\\^(.)}", r"\1"),
+        (r"{\\~(.)}", r"\1"),
+        (r"{\\c(.)}", r"\1"),
+        (r"{\\v(.)}", r"\1"),
+        (r"{\\=(.)}", r"\1"),
+        (r"{\\.(.)}", r"\1"),
+        (r"{\\u(.)}", r"\1"),
+        (r"{\\H(.)}", r"\1"),
+        # Fix special characters and accents
+        (r"{\\\"{a}}", "ä"),
+        (r"{\\\"{e}}", "ë"),
+        (r"{\\\"{i}}", "ï"),
+        (r"{\\\"{o}}", "ö"),
+        (r"{\\\"{u}}", "ü"),
+        (r"{\\\'e}", "é"),
+        (r"{\\\'a}", "á"),
+        (r"{\\\'i}", "í"),
+        (r"{\\\'o}", "ó"),
+        (r"{\\\'u}}", "ú"),
+        (r"{\\`e}", "è"),
+        (r"{\\`a}", "à"),
+        (r"{\\`i}", "ì"),
+        (r"{\\`o}", "ò"),
+        (r"{\\`u}", "ù"),
+        # Handle specific LaTeX symbols/commands
+        (r"\\&", "&"),
+        (r"\\%", "%"),
+        (r"\\_", "_"),
+        (r"\\#", "#"),
+        (r"\\textdollar", "$"),
+        # Remove inline math
+        (r"\$(.+?)\$", r"\1"),
+        # Clean up any remaining LaTeX commands with arguments
+        (r"\\[a-zA-Z]+{(.*?)}", r"\1"),
+        # Remove remaining LaTeX commands without arguments
+        (r"\\[a-zA-Z]+", " "),
+        # Clean up unnecessary curly braces
+        (r"{([^{}]*)}", r"\1"),
+        # Fix spacing around punctuation
+        (r"\s+([.,;:!?])", r"\1"),
+        # Normalize whitespace
+        (r"\s+", " "),
+    ]
+
+    result = text
+    for pattern, replacement in replacements:
+        result = re.sub(pattern, replacement, result)
+
+    # Collapse multiple spaces and remove leading/trailing whitespace
+    result = re.sub(r"\s+", " ", result).strip()
+
+    # Remove any remaining curly braces (this might need multiple passes)
+    for _ in range(3):
+        result = re.sub(r"{([^{}]*)}", r"\1", result)
+
+    return result
 
 
 def _remove_unreferenced_keys(entries: dict[str, str], expanded_contents: str):
