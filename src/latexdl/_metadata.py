@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 import logging
-from typing import NamedTuple
+from dataclasses import dataclass
 
 # Try importing the arxiv package, with a helpful error message if not found
 try:
@@ -14,7 +14,8 @@ except ImportError:
     )
 
 
-class ArxivMetadata(NamedTuple):
+@dataclass(frozen=True, kw_only=True, slots=True)
+class ArxivMetadata:
     """Structured container for arxiv paper metadata.
 
     Contains essential metadata fields like title, authors, published date, etc.

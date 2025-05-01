@@ -12,7 +12,7 @@ import requests
 from tqdm import tqdm
 
 from ._bibtex import detect_and_collect_bibtex
-from ._metadata import fetch_arxiv_metadata
+from ._metadata import ArxivMetadata, fetch_arxiv_metadata
 from .expand import expand_latex_file
 from .strip import check_pandoc_installed, strip
 
@@ -135,7 +135,7 @@ def convert_arxiv_latex(
     keep_comments: bool = False,
     include_bibliography: bool = True,
     include_metadata: bool = True,
-) -> str:
+) -> tuple[str, ArxivMetadata | None]:
     """
     Convert an arXiv paper to expanded LaTeX or markdown.
 
@@ -148,7 +148,9 @@ def convert_arxiv_latex(
         include_metadata: Whether to include paper metadata (title, authors, etc.)
 
     Returns:
-        The expanded LaTeX or converted markdown content as a string
+        The expanded LaTeX or converted markdown content as a string, and
+        the metadata as an ArxivMetadata object (if `include_metadata` is True).
+        If `include_metadata` is False, the metadata will be None.
 
     Raises:
         RuntimeError: If the main LaTeX file cannot be found
@@ -185,6 +187,7 @@ def convert_arxiv_latex(
                 content += sep + bib_content
 
         # Add metadata if requested
+        metadata = None
         if include_metadata:
             if (metadata := fetch_arxiv_metadata(arxiv_id)) is not None:
                 metadata_content = (
@@ -196,7 +199,7 @@ def convert_arxiv_latex(
             else:
                 logging.warning(f"Could not fetch metadata for {arxiv_id}")
 
-        return content
+        return content, metadata
 
 
 def batch_convert_arxiv_papers(
@@ -208,7 +211,7 @@ def batch_convert_arxiv_papers(
     include_bibliography: bool = True,
     include_metadata: bool = True,
     show_progress: bool = True,
-) -> dict[str, str]:
+) -> dict[str, tuple[str, ArxivMetadata | None]]:
     """
     Convert multiple arXiv papers to expanded LaTeX or markdown.
 
@@ -222,9 +225,9 @@ def batch_convert_arxiv_papers(
         show_progress: Whether to show a progress bar
 
     Returns:
-        Dictionary mapping arXiv IDs to their converted content
+        Dictionary mapping arXiv IDs to their converted content and metadata
     """
-    results = {}
+    results: dict[str, tuple[str, ArxivMetadata | None]] = {}
     papers = arxiv_ids_or_urls
 
     if show_progress:
@@ -236,7 +239,7 @@ def batch_convert_arxiv_papers(
         if show_progress and isinstance(papers, tqdm):
             papers.set_description(f"Converting {arxiv_id}")
 
-        content = convert_arxiv_latex(
+        content, metadata = convert_arxiv_latex(
             paper,
             markdown=markdown,
             redownload_existing=redownload_existing,
@@ -245,7 +248,7 @@ def batch_convert_arxiv_papers(
             include_metadata=include_metadata,
         )
 
-        results[arxiv_id] = content
+        results[arxiv_id] = (content, metadata)
 
     return results
 
@@ -320,7 +323,7 @@ def main():
         args.output.mkdir(parents=True, exist_ok=True)
 
         # Write each result to a file
-        for arxiv_id, content in results.items():
+        for arxiv_id, (content, _) in results.items():
             ext = "md" if args.markdown else "tex"
             output_file = args.output / f"{arxiv_id}.{ext}"
 
@@ -332,11 +335,11 @@ def main():
                 continue
 
             with output_file.open("w", encoding="utf-8") as f:
-                f.write(content)
+                f.write(content)  # Write the content part of the tuple
             logging.info(f"Wrote {output_file}")
     else:
         # Print to stdout if no output directory specified
-        for arxiv_id, content in results.items():
+        for arxiv_id, (content, _) in results.items():
             print(content)
 
 
