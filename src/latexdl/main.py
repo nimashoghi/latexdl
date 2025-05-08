@@ -140,6 +140,7 @@ def convert_arxiv_latex(
     include_metadata: bool = True,
     working_dir: str | Path | None = None,
     pandoc_timeout: int = 60,
+    parse_citations: bool = True,
 ) -> tuple[str, ArxivMetadata | None]:
     """
     Convert an arXiv paper to expanded LaTeX or markdown.
@@ -153,6 +154,7 @@ def convert_arxiv_latex(
         include_metadata: Whether to include paper metadata (title, authors, etc.)
         working_dir: Optional working directory for temporary files
         pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
+        parse_citations: Whether to parse citations in the LaTeX file
 
     Returns:
         The expanded LaTeX or converted markdown content as a string, and
@@ -163,6 +165,11 @@ def convert_arxiv_latex(
         RuntimeError: If the main LaTeX file cannot be found
         ValueError: If the arXiv ID format is invalid
     """
+    if parse_citations and not include_bibliography:
+        raise ValueError("Cannot parse citations without including bibliography")
+    if parse_citations and not include_metadata:
+        raise ValueError("Cannot parse citations without including metadata")
+
     # Extract arXiv ID
     arxiv_id = _extract_arxiv_id(arxiv_id_or_url)
 
@@ -213,7 +220,7 @@ def convert_arxiv_latex(
                 expanded_latex,
                 main_tex_path=main_file,
                 markdown=markdown,
-                parse_citations=include_metadata,
+                parse_citations=parse_citations,
             )
         ):
             sep = "\n\n# References\n\n" if markdown else "\n\nREFERENCES\n\n"
@@ -238,6 +245,7 @@ def batch_convert_arxiv_papers(
     show_progress: bool = True,
     working_dir: str | Path | None = None,
     pandoc_timeout: int = 60,
+    parse_citations: bool = True,
 ) -> dict[str, tuple[str, ArxivMetadata | None]]:
     """
     Convert multiple arXiv papers to expanded LaTeX or markdown.
@@ -252,6 +260,7 @@ def batch_convert_arxiv_papers(
         show_progress: Whether to show a progress bar
         working_dir: Optional working directory for temporary files
         pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
+        parse_citations: Whether to parse citations in the LaTeX file
 
     Returns:
         Dictionary mapping arXiv IDs to their converted content and metadata
@@ -277,6 +286,7 @@ def batch_convert_arxiv_papers(
             include_metadata=include_metadata,
             working_dir=working_dir,
             pandoc_timeout=pandoc_timeout,
+            parse_citations=parse_citations,
         )
 
         results[arxiv_id] = (content, metadata)
@@ -353,6 +363,7 @@ def main():
         include_bibliography=args.bib,
         include_metadata=args.metadata,
         pandoc_timeout=args.pandoc_timeout,
+        parse_citations=False,  # Not needed for command line.
     )
 
     # Handle output based on command-line arguments
