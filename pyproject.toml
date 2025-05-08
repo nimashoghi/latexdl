@@ -11,6 +11,8 @@ dependencies = [
     "typing-extensions",
     "bibtexparser>=2.0.0b8",
     "arxiv",
+    "platformdirs",
+    "pydantic",
 ]
 
 [project.urls]

@@ -1,23 +1,38 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
 import dataclasses
 import logging
+import pickle
 import re
 import tarfile
-import tempfile
 import urllib.parse
 from pathlib import Path
 
+import platformdirs
 import requests
 from tqdm import tqdm
 
 from ._bibtex import detect_and_collect_bibtex
+from ._cache import load_cache, save_cache
 from ._metadata import fetch_arxiv_metadata
 from ._types import ArxivMetadata
 from .expand import expand_latex_file
 from .strip import check_pandoc_installed, strip
+
+log = logging.getLogger(__name__)
+
+
+def _get_default_cache_dir() -> Path:
+    """
+    Returns a platform-specific default cache directory for storing downloaded arXiv papers.
+
+    Returns:
+        Path to the default cache directory
+    """
+    cache_dir = platformdirs.user_cache_path("latexdl")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
 
 
 def _extract_arxiv_id(package: str) -> str:
@@ -64,12 +79,13 @@ def download_arxiv_source(
     Raises:
         requests.HTTPError: If downloading fails
     """
+    # Create a subdirectory for this paper
     output_dir = temp_dir / arxiv_id
     output_dir.mkdir(parents=True, exist_ok=True)
 
     fpath = temp_dir / f"{arxiv_id}.tar.gz"
     if fpath.exists() and not redownload_existing:
-        logging.info(f"Package {arxiv_id} already downloaded, skipping")
+        log.info(f"Package {arxiv_id} already downloaded, skipping")
     else:
         url = f"https://arxiv.org/src/{arxiv_id}"
         response = requests.get(url, stream=True)
@@ -135,6 +151,7 @@ def convert_arxiv_latex(
     *,
     markdown: bool = False,
     redownload_existing: bool = False,
+    use_cache: bool = True,
     keep_comments: bool = False,
     include_bibliography: bool = True,
     include_metadata: bool = True,
@@ -149,10 +166,11 @@ def convert_arxiv_latex(
         arxiv_id_or_url: arXiv ID or URL of the paper
         markdown: Whether to convert to markdown (requires pandoc)
         redownload_existing: Whether to redownload if archives already exist
+        use_cache: Whether to use cached files if they exist
         keep_comments: Whether to keep comments in the expanded LaTeX
         include_bibliography: Whether to include bibliography content
         include_metadata: Whether to include paper metadata (title, authors, etc.)
-        working_dir: Optional working directory for temporary files
+        working_dir: Optional working directory for temporary files. If None, uses the default cache directory.
         pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
         parse_citations: Whether to parse citations in the LaTeX file
 
@@ -172,66 +190,64 @@ def convert_arxiv_latex(
 
     # Extract arXiv ID
     arxiv_id = _extract_arxiv_id(arxiv_id_or_url)
-
-    # Create temporary directory for downloads and extraction
-    with contextlib.ExitStack() as stack:
-        if working_dir is None:
-            temp_dir = Path(stack.enter_context(tempfile.TemporaryDirectory()))
-        else:
-            temp_dir = Path(working_dir) / arxiv_id
-            temp_dir.mkdir(parents=True, exist_ok=True)
-
-        # Download and extract
-        src_dir = download_arxiv_source(arxiv_id, temp_dir, redownload_existing)
-
-        # Find main LaTeX file
-        if (main_file := _find_main_latex_file(src_dir)) is None:
-            raise RuntimeError(f"Could not find main LaTeX file for {arxiv_id}")
-
-        # Expand LaTeX
-        expanded_latex = expand_latex_file(main_file, keep_comments=keep_comments)
-
-        # Convert to markdown if requested
-        content = (
-            strip(expanded_latex, timeout=pandoc_timeout)
-            if markdown
-            else expanded_latex
+    if (metadata := fetch_arxiv_metadata(arxiv_id)) is None:
+        raise ValueError(
+            f"Could not find paper with ID {arxiv_id} on arXiv. "
+            "Please check the ID or URL."
         )
 
-        # Add metadata if requested
-        metadata = None
-        if (
-            include_metadata
-            and (metadata := fetch_arxiv_metadata(arxiv_id)) is not None
-        ):
-            metadata_content = (
-                metadata.format_for_markdown()
-                if markdown
-                else metadata.format_for_latex()
-            )
-            content = metadata_content + content
-        else:
-            raise ValueError(f"Could not fetch metadata for {arxiv_id}")
+    # Create directory for downloads and extraction
+    if working_dir is None:
+        working_dir = _get_default_cache_dir()
+        log.info(f"Using default cache directory: {working_dir}")
 
-        # Add bibliography if requested
-        if include_bibliography and (
-            bib_content := detect_and_collect_bibtex(
-                src_dir,
-                expanded_latex,
-                main_tex_path=main_file,
-                markdown=markdown,
-                parse_citations=parse_citations,
-            )
-        ):
-            sep = "\n\n# References\n\n" if markdown else "\n\nREFERENCES\n\n"
-            content += sep + bib_content.references_str
+    temp_dir = Path(working_dir) / arxiv_id / metadata._arxiv_id_full()
+    if (cached_contents := load_cache(temp_dir)) is not None:
+        log.info(f"Using cached content for {arxiv_id}")
+        return cached_contents.paper_contents, cached_contents.metadata
 
-            if metadata is not None:
-                metadata = dataclasses.replace(
-                    metadata, citations=bib_content.citations
-                )
+    temp_dir.mkdir(parents=True, exist_ok=True)
 
-        return content, metadata
+    # Download and extract
+    src_dir = download_arxiv_source(arxiv_id, temp_dir, redownload_existing)
+
+    # Find main LaTeX file
+    if (main_file := _find_main_latex_file(src_dir)) is None:
+        raise RuntimeError(f"Could not find main LaTeX file for {arxiv_id}")
+
+    # Expand LaTeX
+    expanded_latex = expand_latex_file(main_file, keep_comments=keep_comments)
+
+    # Convert to markdown if requested
+    content = (
+        strip(expanded_latex, timeout=pandoc_timeout) if markdown else expanded_latex
+    )
+
+    # Add metadata if requested
+    if include_metadata:
+        metadata_content = (
+            metadata.format_for_markdown() if markdown else metadata.format_for_latex()
+        )
+        content = metadata_content + content
+
+    # Add bibliography if requested
+    if include_bibliography and (
+        bib_content := detect_and_collect_bibtex(
+            src_dir,
+            expanded_latex,
+            main_tex_path=main_file,
+            markdown=markdown,
+            parse_citations=parse_citations,
+        )
+    ):
+        sep = "\n\n# References\n\n" if markdown else "\n\nREFERENCES\n\n"
+        content += sep + bib_content.references_str
+
+        if parse_citations:
+            metadata = dataclasses.replace(metadata, citations=bib_content.citations)
+
+    save_cache(temp_dir, content, metadata)
+    return content, metadata
 
 
 def batch_convert_arxiv_papers(
@@ -239,6 +255,7 @@ def batch_convert_arxiv_papers(
     *,
     markdown: bool = False,
     redownload_existing: bool = False,
+    use_cache: bool = True,
     keep_comments: bool = False,
     include_bibliography: bool = True,
     include_metadata: bool = True,
@@ -254,11 +271,12 @@ def batch_convert_arxiv_papers(
         arxiv_ids_or_urls: List of arXiv IDs or URLs
         markdown: Whether to convert to markdown (requires pandoc)
         redownload_existing: Whether to redownload if archives already exist
+        use_cache: Whether to use cached files if they exist
         keep_comments: Whether to keep comments in the expanded LaTeX
         include_bibliography: Whether to include bibliography content
         include_metadata: Whether to include paper metadata (title, authors, etc.)
         show_progress: Whether to show a progress bar
-        working_dir: Optional working directory for temporary files
+        working_dir: Optional working directory for caching files. If None, uses the default cache directory.
         pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
         parse_citations: Whether to parse citations in the LaTeX file
 
@@ -281,6 +299,7 @@ def batch_convert_arxiv_papers(
             paper,
             markdown=markdown,
             redownload_existing=redownload_existing,
+            use_cache=use_cache,
             keep_comments=keep_comments,
             include_bibliography=include_bibliography,
             include_metadata=include_metadata,
@@ -295,8 +314,6 @@ def batch_convert_arxiv_papers(
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
-
     parser = argparse.ArgumentParser(description="Download and convert arXiv papers")
     parser.add_argument("papers", nargs="+", help="arXiv IDs or URLs", type=str)
     parser.add_argument(
@@ -305,6 +322,18 @@ def main():
         help="Output directory",
         type=Path,
         required=False,
+    )
+    parser.add_argument(
+        "--cache-dir",
+        help=f"Directory to use for caching papers (default: {_get_default_cache_dir()})",
+        type=Path,
+        required=False,
+    )
+    parser.add_argument(
+        "--use-cache",
+        help="Use cached files if they exist",
+        action=argparse.BooleanOptionalAction,
+        default=True,
     )
     parser.add_argument(
         "--markdown",
@@ -348,7 +377,16 @@ def main():
         type=int,
         default=60,
     )
+    parser.add_argument(
+        "--verbose",
+        help="Enable verbose output",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
     args = parser.parse_args()
+
+    log_level = logging.DEBUG if args.verbose else logging.WARNING
+    logging.basicConfig(level=log_level)
 
     # Determine markdown format
     if args.markdown is None:
@@ -359,9 +397,11 @@ def main():
         args.papers,
         markdown=args.markdown,
         redownload_existing=args.redownload_existing,
+        use_cache=args.use_cache,
         keep_comments=args.keep_comments,
         include_bibliography=args.bib,
         include_metadata=args.metadata,
+        working_dir=args.cache_dir,
         pandoc_timeout=args.pandoc_timeout,
         parse_citations=False,  # Not needed for command line.
     )
@@ -378,14 +418,14 @@ def main():
 
             # Check if file exists and handle overwrite
             if output_file.exists() and not args.force_overwrite:
-                logging.info(
+                log.info(
                     f"File {output_file} already exists, skipping (use --force-overwrite to overwrite)"
                 )
                 continue
 
             with output_file.open("w", encoding="utf-8") as f:
                 f.write(content)  # Write the content part of the tuple
-            logging.info(f"Wrote {output_file}")
+            log.info(f"Wrote {output_file}")
     else:
         # Print to stdout if no output directory specified
         for arxiv_id, (content, _) in results.items():

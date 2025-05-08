@@ -14,7 +14,7 @@ class ParsedCitation:
     authors: list[str]
 
 
-@dataclass(frozen=True, kw_only=True, slots=True)
+@dataclass(frozen=True, kw_only=True)
 class ArxivMetadata:
     """Structured container for arxiv paper metadata.
 
@@ -70,3 +70,6 @@ class ArxivMetadata:
             f"% Abstract:\n{abstract_str}\n\n"
             f"%% ----------------------------------------------------------------\n\n"
         )
+
+    def _arxiv_id_full(self):
+        return self.entry_id.rsplit("/", 1)[-1]
