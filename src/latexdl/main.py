@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import logging
 import re
 import tarfile
@@ -13,7 +14,8 @@ import requests
 from tqdm import tqdm
 
 from ._bibtex import detect_and_collect_bibtex
-from ._metadata import ArxivMetadata, fetch_arxiv_metadata
+from ._metadata import fetch_arxiv_metadata
+from ._types import ArxivMetadata
 from .expand import expand_latex_file
 from .strip import check_pandoc_installed, strip
 
@@ -189,6 +191,21 @@ def convert_arxiv_latex(
             else expanded_latex
         )
 
+        # Add metadata if requested
+        metadata = None
+        if (
+            include_metadata
+            and (metadata := fetch_arxiv_metadata(arxiv_id)) is not None
+        ):
+            metadata_content = (
+                metadata.format_for_markdown()
+                if markdown
+                else metadata.format_for_latex()
+            )
+            content = metadata_content + content
+        else:
+            raise ValueError(f"Could not fetch metadata for {arxiv_id}")
+
         # Add bibliography if requested
         if include_bibliography and (
             bib_content := detect_and_collect_bibtex(
@@ -196,23 +213,16 @@ def convert_arxiv_latex(
                 expanded_latex,
                 main_tex_path=main_file,
                 markdown=markdown,
+                parse_citations=include_metadata,
             )
         ):
             sep = "\n\n# References\n\n" if markdown else "\n\nREFERENCES\n\n"
-            content += sep + bib_content
+            content += sep + bib_content.references_str
 
-        # Add metadata if requested
-        metadata = None
-        if include_metadata:
-            if (metadata := fetch_arxiv_metadata(arxiv_id)) is not None:
-                metadata_content = (
-                    metadata.format_for_markdown()
-                    if markdown
-                    else metadata.format_for_latex()
+            if metadata is not None:
+                metadata = dataclasses.replace(
+                    metadata, citations=bib_content.citations
                 )
-                content = metadata_content + content
-            else:
-                logging.warning(f"Could not fetch metadata for {arxiv_id}")
 
         return content, metadata
 

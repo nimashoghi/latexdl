@@ -2,12 +2,31 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 import bibtexparser
 import bibtexparser.model
 
+from ._types import ParsedCitation
+
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CollectBibtexOutput:
+    references_str: str
+    """Contents of the merged BibTeX file."""
+
+    citations: list[ParsedCitation] | None = None
+    """Parsed citations from the BibTeX file, if `parse_citations` is True.
+    Else None."""
+
+    def __bool__(self):
+        """Check if the object is not empty."""
+        return bool(self.references_str)
+
 
 # Expanded citation patterns
 CITATION_PATTERNS = [
@@ -31,7 +50,8 @@ def detect_and_collect_bibtex(
     main_tex_path: Path | None = None,
     remove_unreferenced: bool = True,
     markdown: bool = False,
-):
+    parse_citations: bool = True,
+) -> CollectBibtexOutput | None:
     """
     Given a base directory and expanded LaTeX contents, extract the included
     BibTeX files and return the contents of the merged BibTeX file.
@@ -44,10 +64,12 @@ def detect_and_collect_bibtex(
         remove_unreferenced (bool): Whether to remove unreferenced BibTeX
             entries from the merged file.
         markdown (bool): Whether to format output in markdown style.
+        parse_citations (bool): Whether to parse citations from the BibTeX
+            entries.
 
     Returns:
-        str | None: The contents of the merged BibTeX file, or None if no
-            BibTeX file is included.
+        CollectBibtexOutput | None: The output containing the merged BibTeX file
+            contents and parsed citations.
     """
     # Find all the included BibTeX files using expanded patterns
     bib_files = []
@@ -56,7 +78,7 @@ def detect_and_collect_bibtex(
             bib_files.extend([f.strip() for f in match.group(1).split(",")])
 
     # Collect entries from external .bib files
-    entries: dict[str, str] = {}
+    entries: dict[str, tuple[str, ParsedCitation | None]] = {}
     for bib_file in bib_files:
         # Handle .bib extension if present, otherwise add it
         if not bib_file.endswith(".bib"):
@@ -69,30 +91,45 @@ def detect_and_collect_bibtex(
             continue
 
         # Parse the file and collect the entries
-        entries.update(_parse_bibtex_file(bib_path, markdown))
+        entries.update(
+            _parse_bibtex_file(
+                bib_path,
+                markdown,
+                parse_citations=parse_citations,
+            )
+        )
 
     # Check for manual bibliography environment
-    manual_bibs = _extract_manual_bibliography(expanded_contents, markdown)
-    if manual_bibs:
+    if manual_bibs := _extract_manual_bibliography(
+        expanded_contents,
+        markdown,
+        parse_citations=parse_citations,
+    ):
         entries.update(manual_bibs)
 
     # If no entries found in .bib files or thebibliography environment,
     # try to find a .bbl file with the same basename as the main tex file
-    if not entries and main_tex_path is not None:
-        bbl_path = main_tex_path.with_suffix(".bbl")
-        if bbl_path.exists():
-            log.info(f"No .bib files found, using .bbl file: {bbl_path}")
-            try:
-                with open(bbl_path, "r", encoding="utf-8") as f:
-                    bbl_content = f.read()
+    if (
+        not entries
+        and main_tex_path is not None
+        and (bbl_path := main_tex_path.with_suffix(".bbl")).exists()
+    ):
+        log.info(f"No .bib files found, using .bbl file: {bbl_path}")
+        try:
+            with bbl_path.open("r", encoding="utf-8") as f:
+                bbl_content = f.read()
 
-                # Extract bibliography entries from the .bbl file
-                bbl_entries = _extract_bbl_bibliography(bbl_content, markdown)
-                if bbl_entries:
-                    entries.update(bbl_entries)
-                    log.info(f"Extracted {len(bbl_entries)} entries from .bbl file")
-            except Exception as e:
-                log.warning(f"Error reading .bbl file {bbl_path}: {e}")
+            # Extract bibliography entries from the .bbl file
+            bbl_entries = _extract_bbl_bibliography(
+                bbl_content,
+                markdown,
+                parse_citations=parse_citations,
+            )
+            if bbl_entries:
+                entries.update(bbl_entries)
+                log.info(f"Extracted {len(bbl_entries)} entries from .bbl file")
+        except Exception as e:
+            log.warning(f"Error reading .bbl file {bbl_path}: {e}")
 
     # If no entries found, return None
     if not entries:
@@ -113,17 +150,64 @@ def detect_and_collect_bibtex(
 
     # Merge the entries into a single BibTeX file
     lines = sorted(entries.items(), key=lambda x: x[0])
-    if markdown:
-        return "\n".join(content for _, content in lines)
-    else:
-        return "\n".join(content for _, content in lines)
+    references_str = "\n".join(content for _, (content, _) in lines)
+    citations = [parsed for _, (_, parsed) in lines if parsed]
+    return CollectBibtexOutput(references_str=references_str, citations=citations)
+
+
+def _manual_bibliography_to_parsed_citation(cleaned_text: str, key: str):
+    citation: ParsedCitation | None = None
+
+    try:
+        # Most bibliography entries follow the pattern: "Author(s). Title. Journal/Publisher info"
+        # or "Author(s), Title, Journal/Publisher info"
+
+        # First, try to extract authors
+        authors = []
+        author_pattern = r"^([^\.,:]+)(?:\.|\,)"
+        author_match = re.match(author_pattern, cleaned_text)
+        if author_match:
+            author_text = author_match.group(1).strip()
+            # Check if there are multiple authors (typically separated by 'and' or commas)
+            if " and " in author_text:
+                authors = [a.strip() for a in author_text.split(" and ")]
+            else:
+                # If no 'and', assume a single author or author list with commas
+                authors = [author_text]
+
+        # Try to extract title - this is more challenging without specific metadata
+        # We'll use a heuristic: the first quoted text or the text between the author and the next period
+        title = ""
+        title_pattern1 = r"[\"\"]([^\"\"]+)[\"\"]"  # Quoted title
+        title_pattern2 = (
+            r"(?:\.|\,)\s*([^\.]+)\."  # Text after author until next period
+        )
+
+        title_match = re.search(title_pattern1, cleaned_text)
+        if title_match:
+            title = title_match.group(1).strip()
+        else:
+            title_match = re.search(title_pattern2, cleaned_text)
+            if title_match:
+                title = title_match.group(1).strip()
+
+        citation = ParsedCitation(id=key, title=title, authors=authors)
+    except Exception:
+        log.warning(
+            f"Failed to create ParsedCitation for manual bibliography entry {key}",
+            exc_info=True,
+        )
+
+    return citation
 
 
 def _extract_manual_bibliography(
-    content: str, markdown: bool = False
-) -> dict[str, str]:
+    content: str,
+    markdown: bool = False,
+    parse_citations: bool = True,
+):
     """Extract entries from manual thebibliography environment and clean formatting."""
-    entries = {}
+    entries: dict[str, tuple[str, ParsedCitation | None]] = {}
 
     # Find the thebibliography environment
     match = re.search(
@@ -146,32 +230,78 @@ def _extract_manual_bibliography(
         cleaned_text = _clean_latex_formatting(raw_text)
 
         if markdown:
-            entries[key] = f"* `[@{key}]` {cleaned_text}"
+            text = f"* `[@{key}]` {cleaned_text}"
         else:
-            entries[key] = f"[@{key}] {cleaned_text}"
+            text = f"[@{key}] {cleaned_text}"
+
+        parsed = (
+            _manual_bibliography_to_parsed_citation(cleaned_text, key)
+            if parse_citations
+            else None
+        )
+        entries[key] = (text, parsed)
 
     return entries
 
 
+def _bbl_to_parsed_citation(cleaned_text: str, key: str):
+    citation: ParsedCitation | None = None
+    try:
+        # Most BBL entries follow the pattern: "Author(s). Title. Journal/Publisher info"
+        # or "Author(s), Title, Journal/Publisher info"
+
+        # First, try to extract authors
+        authors = []
+        author_pattern = r"^([^\.,:]+)(?:\.|\,)"
+        author_match = re.match(author_pattern, cleaned_text)
+        if author_match:
+            author_text = author_match.group(1).strip()
+            # Check if there are multiple authors (typically separated by 'and' or commas)
+            if " and " in author_text:
+                authors = [a.strip() for a in author_text.split(" and ")]
+            else:
+                # If no 'and', assume a single author or author list with commas
+                authors = [author_text]
+
+        # Try to extract title - this is more challenging without specific metadata
+        # We'll use a heuristic: the first quoted text or the text between the author and the next period
+        title = ""
+        title_pattern1 = r"[\"\"]([^\"\"]+)[\"\"]"  # Quoted title
+        title_pattern2 = (
+            r"(?:\.|\,)\s*([^\.]+)\."  # Text after author until next period
+        )
+
+        title_match = re.search(title_pattern1, cleaned_text)
+        if title_match:
+            title = title_match.group(1).strip()
+        else:
+            title_match = re.search(title_pattern2, cleaned_text)
+            if title_match:
+                title = title_match.group(1).strip()
+
+        citation = ParsedCitation(id=key, title=title, authors=authors)
+    except Exception:
+        log.warning(
+            f"Failed to create ParsedCitation for BBL entry {key}", exc_info=True
+        )
+
+    return citation
+
+
 def _extract_bbl_bibliography(
-    bbl_content: str, markdown: bool = False
-) -> dict[str, str]:
-    """Extract entries from a .bbl file and strip LaTeX formatting.
-
-    Args:
-        bbl_content: Content of the .bbl file
-        markdown: Whether to format output in markdown style
-
-    Returns:
-        Dictionary mapping citation keys to formatted citation text
-    """
-    entries = {}
+    bbl_content: str,
+    markdown: bool = False,
+    parse_citations: bool = True,
+):
+    """Extract entries from a .bbl file and strip LaTeX formatting."""
+    entries: dict[str, tuple[str, ParsedCitation | None]] = {}
 
     # Check if the .bbl file contains a thebibliography environment
-    match = re.search(
-        r"\\begin{thebibliography}.*?\\end{thebibliography}", bbl_content, re.DOTALL
-    )
-    if not match:
+    if not (
+        match := re.search(
+            r"\\begin{thebibliography}.*?\\end{thebibliography}", bbl_content, re.DOTALL
+        )
+    ):
         return entries
 
     # Extract bibitem entries from the bbl file
@@ -188,9 +318,12 @@ def _extract_bbl_bibliography(
         cleaned_text = _clean_latex_formatting(raw_text)
 
         if markdown:
-            entries[key] = f"* `[@{key}]` {cleaned_text}"
+            text = f"* `[@{key}]` {cleaned_text}"
         else:
-            entries[key] = f"[@{key}] {cleaned_text}"
+            text = f"[@{key}] {cleaned_text}"
+
+        parsed = _bbl_to_parsed_citation(cleaned_text, key) if parse_citations else None
+        entries[key] = (text, parsed)
 
     return entries
 
@@ -277,7 +410,10 @@ def _clean_latex_formatting(text: str) -> str:
     return result
 
 
-def _remove_unreferenced_keys(entries: dict[str, str], expanded_contents: str):
+def _remove_unreferenced_keys(
+    entries: Mapping[str, tuple[str, ParsedCitation | None]],
+    expanded_contents: str,
+):
     # Use expanded citation patterns to find all referenced keys
     referenced_keys = set()
 
@@ -294,7 +430,35 @@ def _remove_unreferenced_keys(entries: dict[str, str], expanded_contents: str):
     return entries
 
 
-def _parse_bibtex_file(bib_file: Path, markdown: bool = False):
+def _bibtex_to_parsed_citation(entry: bibtexparser.model.Entry, key: str):
+    # Create a ParsedCitation object
+    citation: ParsedCitation | None = None
+    try:
+        title = title.value if (title := entry.get("title")) else ""
+
+        # Extract authors
+        authors = []
+        if author_field := entry.get("author"):
+            author_list = [a.strip() for a in author_field.value.split(" and ")]
+            for author in author_list:
+                # Simplified author formatting for the list
+                parts = author.split(",")
+                if len(parts) == 2:  # Last, First format
+                    last, first = parts
+                    authors.append(f"{first.strip()} {last.strip()}")
+                else:  # First Last format
+                    authors.append(author)
+
+        citation = ParsedCitation(id=key, title=title, authors=authors)
+    except Exception:
+        log.warning(f"Failed to create ParsedCitation for {key}", exc_info=True)
+
+    return citation
+
+
+def _parse_bibtex_file(
+    bib_file: Path, markdown: bool = False, parse_citations: bool = True
+):
     try:
         library = bibtexparser.parse_file(str(bib_file.absolute()))
         for entry in library.entries:
@@ -303,7 +467,10 @@ def _parse_bibtex_file(bib_file: Path, markdown: bool = False):
             ):
                 continue
 
-            yield key, content
+            citation = (
+                _bibtex_to_parsed_citation(entry, key) if parse_citations else None
+            )
+            yield key, (content, citation)
     except Exception:
         log.warning(f"Failed to parse BibTeX file {bib_file}", exc_info=True)
 

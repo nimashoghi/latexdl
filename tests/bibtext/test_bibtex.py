@@ -59,8 +59,7 @@ class TestBibliographyPatterns:
     def test_bibliography_patterns(self, command, filename):
         """Test that bibliography patterns correctly match various commands"""
         for pattern in BIBLIOGRAPHY_PATTERNS:
-            match = re.search(pattern, command)
-            if match:
+            if match := re.search(pattern, command):
                 assert match.group(1) == filename
                 return
         assert False, f"No pattern matched for {command}"
@@ -89,8 +88,7 @@ class TestCitationPatterns:
     def test_citation_patterns(self, command, keys):
         """Test that citation patterns correctly match various commands"""
         for pattern in CITATION_PATTERNS:
-            match = re.search(pattern, command)
-            if match:
+            if match := re.search(pattern, command):
                 assert match.group(1) == keys
                 return
         assert False, f"No pattern matched for {command}"
@@ -105,8 +103,8 @@ class TestManualBibliography:
         assert len(entries) == 2
         assert "manual2018" in entries
         assert "another2017" in entries
-        assert "Johnson" in entries["manual2018"]
-        assert "Williams" in entries["another2017"]
+        assert "Johnson" in entries["manual2018"][0]
+        assert "Williams" in entries["another2017"][0]
 
 
 class TestRemoveUnreferencedKeys:
@@ -115,10 +113,10 @@ class TestRemoveUnreferencedKeys:
     def test_remove_unreferenced_keys(self):
         """Test that unreferenced keys are correctly removed"""
         entries = {
-            "smith2020": "- @smith2020: Smith paper",
-            "jones2019": "- @jones2019: Jones book",
-            "wilson2021": "- @wilson2021: Wilson article",
-            "unused2022": "- @unused2022: Unused entry",
+            "smith2020": ("- @smith2020: Smith paper", None),
+            "jones2019": ("- @jones2019: Jones book", None),
+            "wilson2021": ("- @wilson2021: Wilson article", None),
+            "unused2022": ("- @unused2022: Unused entry", None),
         }
 
         latex_content = r"""
@@ -166,8 +164,8 @@ class TestDetectAndCollectBibtex:
 
         result = detect_and_collect_bibtex(tmp_path, latex_content)
         assert result is not None
-        assert "smith2020" in result
-        assert "jones2019" in result
+        assert "smith2020" in result.references_str
+        assert "jones2019" in result.references_str
 
     def test_biblatex_addbibresource(self, tmp_path, mock_biblatex_file):
         """Test with biblatex's \addbibresource command"""
@@ -183,7 +181,7 @@ class TestDetectAndCollectBibtex:
 
         result = detect_and_collect_bibtex(tmp_path, latex_content)
         assert result is not None
-        assert "wilson2021" in result
+        assert "wilson2021" in result.references_str
 
     def test_multiple_bibliography_files(
         self, tmp_path, mock_bibtex_file, mock_biblatex_file
@@ -202,8 +200,8 @@ class TestDetectAndCollectBibtex:
 
         result = detect_and_collect_bibtex(tmp_path, latex_content)
         assert result is not None
-        assert "smith2020" in result
-        assert "wilson2021" in result
+        assert "smith2020" in result.references_str
+        assert "wilson2021" in result.references_str
 
     def test_with_manual_bibliography(self, tmp_path):
         """Test with a manual bibliography environment"""
@@ -221,8 +219,8 @@ class TestDetectAndCollectBibtex:
 
         result = detect_and_collect_bibtex(tmp_path, latex_content)
         assert result is not None
-        assert "manual2018" in result
-        assert "another2017" in result
+        assert "manual2018" in result.references_str
+        assert "another2017" in result.references_str
 
     def test_complex_citations(self, tmp_path, mock_bibtex_file):
         """Test with complex citation commands"""
@@ -244,8 +242,8 @@ class TestDetectAndCollectBibtex:
 
         result = detect_and_collect_bibtex(tmp_path, latex_content)
         assert result is not None
-        assert "smith2020" in result
-        assert "jones2019" in result
+        assert "smith2020" in result.references_str
+        assert "jones2019" in result.references_str
 
     def test_unreferenced_removal(self, tmp_path, mock_bibtex_file):
         """Test removal of unreferenced entries"""
@@ -261,8 +259,8 @@ class TestDetectAndCollectBibtex:
             tmp_path, latex_content, remove_unreferenced=True
         )
         assert result is not None
-        assert "smith2020" in result
-        assert "jones2019" not in result
+        assert "smith2020" in result.references_str
+        assert "jones2019" not in result.references_str
 
     def test_no_removal_of_unreferenced(self, tmp_path, mock_bibtex_file):
         """Test keeping unreferenced entries when requested"""
@@ -278,5 +276,5 @@ class TestDetectAndCollectBibtex:
             tmp_path, latex_content, remove_unreferenced=False
         )
         assert result is not None
-        assert "smith2020" in result
-        assert "jones2019" in result
+        assert "smith2020" in result.references_str
+        assert "jones2019" in result.references_str

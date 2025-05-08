@@ -7,7 +7,7 @@ LaTeX files from arXiv to Markdown.
 
 from __future__ import annotations
 
-from ._metadata import ArxivMetadata as ArxivMetadata
+from ._types import ArxivMetadata as ArxivMetadata
 from .main import batch_convert_arxiv_papers as batch_convert_arxiv_papers
 from .main import convert_arxiv_latex as convert_arxiv_latex
 from .main import download_arxiv_source as download_arxiv_source

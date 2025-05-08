@@ -40,20 +40,20 @@ def test_integration_with_complex_project(complex_latex_project, use_case, monke
         # Verify results
         assert result is not None
         # Check for references from main file
-        assert "smith2020" in result
-        assert "jones2019" in result
-        assert "brown2021" in result
-        assert "davis2018" in result
-        assert "multi2022" in result
+        assert "smith2020" in result.references_str
+        assert "jones2019" in result.references_str
+        assert "brown2021" in result.references_str
+        assert "davis2018" in result.references_str
+        assert "multi2022" in result.references_str
         # Check for references from included sections
-        assert "wilson2017" in result
-        assert "zhang2019" in result
-        assert "taylor2020" in result
-        assert "stats2019" in result
-        assert "stats2020" in result
+        assert "wilson2017" in result.references_str
+        assert "zhang2019" in result.references_str
+        assert "taylor2020" in result.references_str
+        assert "stats2019" in result.references_str
+        assert "stats2020" in result.references_str
         # Check unused references are removed
-        assert "unused2023" not in result
-        assert "another_unused" not in result
+        assert "unused2023" not in result.references_str
+        assert "another_unused" not in result.references_str
 
     elif use_case == "biblatex":
         main_file = project_dir / "biblatex_project" / "document.tex"
@@ -76,14 +76,14 @@ def test_integration_with_complex_project(complex_latex_project, use_case, monke
         # Verify results
         assert result is not None
         # Check for biblatex references
-        assert "anderson2021" in result
-        assert "roberts2019" in result
-        assert "white2020" in result
-        assert "martin2018" in result
-        assert "lee2017" in result
-        assert "parker2019" in result
+        assert "anderson2021" in result.references_str
+        assert "roberts2019" in result.references_str
+        assert "white2020" in result.references_str
+        assert "martin2018" in result.references_str
+        assert "lee2017" in result.references_str
+        assert "parker2019" in result.references_str
         # Check unused reference is removed
-        assert "unused_biblatex" not in result
+        assert "unused_biblatex" not in result.references_str
 
     elif use_case == "manual":
         main_file = project_dir / "manual_bib" / "manual.tex"
@@ -93,10 +93,10 @@ def test_integration_with_complex_project(complex_latex_project, use_case, monke
         # Verify results
         assert result is not None
         # Check for manual bibliography entries
-        assert "manual2018" in result
-        assert "another2017" in result
+        assert "manual2018" in result.references_str
+        assert "another2017" in result.references_str
         # Check unused entry is removed
-        assert "unused_manual" not in result
+        assert "unused_manual" not in result.references_str
 
 
 def test_realistic_project_simulation(tmp_path, monkeypatch):
@@ -199,13 +199,13 @@ Manual citation \cite{manual2017}
     # Verify results
     assert result is not None
     # Check classic references
-    assert "classic2020" in result
-    assert "natbib2019" in result
+    assert "classic2020" in result.references_str
+    assert "natbib2019" in result.references_str
     # Check modern references
-    assert "modern2021" in result
-    assert "modern2018" in result
+    assert "modern2021" in result.references_str
+    assert "modern2018" in result.references_str
     # Check manual reference
-    assert "manual2017" in result
+    assert "manual2017" in result.references_str
     # Check unused references are excluded
-    assert "unused_classic" not in result
-    assert "unused_modern" not in result
+    assert "unused_classic" not in result.references_str
+    assert "unused_modern" not in result.references_str
