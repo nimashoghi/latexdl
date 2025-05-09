@@ -151,7 +151,7 @@ def convert_arxiv_latex(
     *,
     markdown: bool = False,
     redownload_existing: bool = False,
-    use_cache: bool = True,
+    use_cache: bool = False,
     keep_comments: bool = False,
     include_bibliography: bool = True,
     include_metadata: bool = True,
@@ -256,7 +256,7 @@ def batch_convert_arxiv_papers(
     *,
     markdown: bool = False,
     redownload_existing: bool = False,
-    use_cache: bool = True,
+    use_cache: bool = False,
     keep_comments: bool = False,
     include_bibliography: bool = True,
     include_metadata: bool = True,
@@ -334,7 +334,7 @@ def main():
         "--use-cache",
         help="Use cached files if they exist",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--markdown",
