@@ -202,7 +202,7 @@ def convert_arxiv_latex(
         log.info(f"Using default cache directory: {working_dir}")
 
     temp_dir = Path(working_dir) / arxiv_id / metadata._arxiv_id_full()
-    if (cached_contents := load_cache(temp_dir)) is not None:
+    if use_cache and (cached_contents := load_cache(temp_dir)) is not None:
         log.info(f"Using cached content for {arxiv_id}")
         return cached_contents.paper_contents, cached_contents.metadata
 
@@ -246,7 +246,8 @@ def convert_arxiv_latex(
         if parse_citations:
             metadata = dataclasses.replace(metadata, citations=bib_content.citations)
 
-    save_cache(temp_dir, content, metadata)
+    if use_cache:
+        save_cache(temp_dir, content, metadata)
     return content, metadata
 
 
