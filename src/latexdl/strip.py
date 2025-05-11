@@ -1,18 +1,29 @@
 from __future__ import annotations
 
+import concurrent.futures
+import importlib.util
 import logging
-import subprocess
 
 log = logging.getLogger(__name__)
 
 
 def check_pandoc_installed() -> bool:
     """Check if pandoc is installed on the system."""
-    try:
-        subprocess.run(["pandoc", "--version"], check=True, stdout=subprocess.PIPE)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
+    return importlib.util.find_spec("pypandoc") is not None
+
+
+def _run_pypandoc_conversion(
+    content_arg: str, format_arg: str, to_arg: str, extra_args_arg: list[str]
+) -> str:
+    """Run pypandoc.convert_text in a manner suitable for ThreadPoolExecutor."""
+    import pypandoc  # Import here as it's used after the check in strip()
+
+    return pypandoc.convert_text(
+        source=content_arg,
+        format=format_arg,
+        to=to_arg,
+        extra_args=extra_args_arg,
+    )
 
 
 def strip(content: str, timeout: int = 60) -> str:
@@ -26,33 +37,33 @@ def strip(content: str, timeout: int = 60) -> str:
         The stripped plain text content.
 
     Raises:
-        RuntimeError: If pandoc is not installed or fails to process the content.
-        subprocess.TimeoutExpired: If the pandoc process times out.
+        RuntimeError: If Pypandoc is not installed or fails to process the content.
+        concurrent.futures.TimeoutError: If the Pypandoc process times out.
     """
-    # Make sure that pandoc is installed
+    # Make sure that pypandoc is installed
     if not check_pandoc_installed():
         raise RuntimeError(
-            "Pandoc is not installed. Please install it to use this function."
+            "Pypandoc is not installed. Please install it to use this function."
         )
 
-    # Use pandoc to convert LaTeX to plain text.
-    # Our command is as follows: `pandoc --wrap=none -f latex -t markdown`
-    # The stdin should be the LaTeX content, and the stdout will be the plain text.
-    try:
-        result = subprocess.run(
-            ["pandoc", "--wrap=none", "-f", "latex", "-t", "markdown"],
-            input=content.encode("utf-8"),
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout,
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            _run_pypandoc_conversion,
+            content,
+            "latex-latex_macros",
+            "markdown",
+            ["--wrap=none"],
         )
 
-        plain_text = result.stdout.decode("utf-8")
-        return plain_text
-    except subprocess.TimeoutExpired:
-        log.error(f"Pandoc process timed out after {timeout} seconds")
-        raise
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr.decode("utf-8") if e.stderr else "Unknown error"
-        raise RuntimeError(f"Failed to strip LaTeX content: {error_msg}")
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            log.error(f"Pypandoc operation timed out after {timeout} seconds")
+            future.cancel()  # Attempt to cancel the underlying operation
+            raise
+        except Exception as e:
+            # This will catch errors from pypandoc.convert_text itself
+            log.error(f"Pypandoc conversion failed: {e}")
+            raise RuntimeError(
+                f"Failed to strip LaTeX content using Pypandoc: {e}"
+            ) from e

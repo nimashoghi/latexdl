@@ -13,6 +13,7 @@ dependencies = [
     "arxiv",
     "platformdirs",
     "pydantic",
+    "pypandoc-binary",
 ]
 
 [project.urls]
