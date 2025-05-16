@@ -164,15 +164,26 @@ def _manual_bibliography_to_parsed_citation(cleaned_text: str, key: str):
 
         # First, try to extract authors
         authors = []
-        author_pattern = r"^([^\.,:]+)(?:\.|\,)"
+
+        # Extract the first line or segment up to the first period/comma
+        author_pattern = r"^(.*?)(?:\.|\,)"
         author_match = re.match(author_pattern, cleaned_text)
         if author_match:
             author_text = author_match.group(1).strip()
-            # Check if there are multiple authors (typically separated by 'and' or commas)
+
+            # Handle "et al."
+            author_text = re.sub(r"et\s*al\.*", "", author_text).strip()
+
+            # Check for multiple authors with "and"
             if " and " in author_text:
                 authors = [a.strip() for a in author_text.split(" and ")]
+            # Check for multiple authors with commas
+            elif "," in author_text and " " in author_text:
+                # For entries like "Smith, J., Jones, B., Williams, C."
+                author_parts = [p.strip() for p in author_text.split(",")]
+                authors = [p for p in author_parts if p]
             else:
-                # If no 'and', assume a single author or author list with commas
+                # Single author or couldn't parse further
                 authors = [author_text]
 
         # Try to extract title - this is more challenging without specific metadata
@@ -252,15 +263,26 @@ def _bbl_to_parsed_citation(cleaned_text: str, key: str):
 
         # First, try to extract authors
         authors = []
-        author_pattern = r"^([^\.,:]+)(?:\.|\,)"
+
+        # Extract the first line or segment up to the first period/comma
+        author_pattern = r"^(.*?)(?:\.|\,)"
         author_match = re.match(author_pattern, cleaned_text)
         if author_match:
             author_text = author_match.group(1).strip()
-            # Check if there are multiple authors (typically separated by 'and' or commas)
+
+            # Handle "et al."
+            author_text = re.sub(r"et\s*al\.*", "", author_text).strip()
+
+            # Check for multiple authors with "and"
             if " and " in author_text:
                 authors = [a.strip() for a in author_text.split(" and ")]
+            # Check for multiple authors with commas
+            elif "," in author_text and " " in author_text:
+                # For entries like "Smith, J., Jones, B., Williams, C."
+                author_parts = [p.strip() for p in author_text.split(",")]
+                authors = [p for p in author_parts if p]
             else:
-                # If no 'and', assume a single author or author list with commas
+                # Single author or couldn't parse further
                 authors = [author_text]
 
         # Try to extract title - this is more challenging without specific metadata
@@ -345,6 +367,8 @@ def _clean_latex_formatting(text: str) -> str:
         (r"\\emph{(.*?)}", r"\1"),
         (r"\\textit{(.*?)}", r"\1"),
         (r"\\textbf{(.*?)}", r"\1"),
+        # Handle {\em text} style markup (common in bibliographies)
+        (r"{\\em\s+([^{}]+?)}", r"\1"),
         # Remove formatting for special characters like tilde, etc.
         (r"~", " "),
         (r"``|''|\"|``|''", '"'),
@@ -382,13 +406,14 @@ def _clean_latex_formatting(text: str) -> str:
         (r"\\_", "_"),
         (r"\\#", "#"),
         (r"\\textdollar", "$"),
-        # Remove inline math
-        (r"\$(.+?)\$", r"\1"),
+        # Preserve inline math formulas in titles
+        (r"\$([^$]+?)\$", r"\1"),
         # Clean up any remaining LaTeX commands with arguments
         (r"\\[a-zA-Z]+{(.*?)}", r"\1"),
         # Remove remaining LaTeX commands without arguments
         (r"\\[a-zA-Z]+", " "),
         # Clean up unnecessary curly braces
+        (r"{\\em\s*([^{}]*)}", r"\1"),  # Specific rule for {\em }
         (r"{([^{}]*)}", r"\1"),
         # Fix spacing around punctuation
         (r"\s+([.,;:!?])", r"\1"),
