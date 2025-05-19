@@ -158,6 +158,7 @@ def convert_arxiv_latex(
     working_dir: str | Path | None = None,
     pandoc_timeout: int = 60,
     parse_citations: bool = True,
+    preserve_macros: bool = False,
 ) -> tuple[str, ArxivMetadata | None]:
     """
     Convert an arXiv paper to expanded LaTeX or markdown.
@@ -173,7 +174,7 @@ def convert_arxiv_latex(
         working_dir: Optional working directory for temporary files. If None, uses the default cache directory.
         pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
         parse_citations: Whether to parse citations in the LaTeX file
-
+        preserve_macros: Whether to preserve LaTeX macros in the converted markdown.
     Returns:
         The expanded LaTeX or converted markdown content as a string, and
         the metadata as an ArxivMetadata object (if `include_metadata` is True).
@@ -220,7 +221,9 @@ def convert_arxiv_latex(
 
     # Convert to markdown if requested
     content = (
-        strip(expanded_latex, timeout=pandoc_timeout) if markdown else expanded_latex
+        strip(expanded_latex, timeout=pandoc_timeout, preserve_macros=preserve_macros)
+        if markdown
+        else expanded_latex
     )
 
     # Add metadata if requested
@@ -264,6 +267,7 @@ def batch_convert_arxiv_papers(
     working_dir: str | Path | None = None,
     pandoc_timeout: int = 60,
     parse_citations: bool = True,
+    preserve_macros: bool = False,
 ) -> dict[str, tuple[str, ArxivMetadata | None]]:
     """
     Convert multiple arXiv papers to expanded LaTeX or markdown.
@@ -280,7 +284,7 @@ def batch_convert_arxiv_papers(
         working_dir: Optional working directory for caching files. If None, uses the default cache directory.
         pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
         parse_citations: Whether to parse citations in the LaTeX file
-
+        preserve_macros: Whether to preserve LaTeX macros in the converted markdown.
     Returns:
         Dictionary mapping arXiv IDs to their converted content and metadata
     """
@@ -307,6 +311,7 @@ def batch_convert_arxiv_papers(
             working_dir=working_dir,
             pandoc_timeout=pandoc_timeout,
             parse_citations=parse_citations,
+            preserve_macros=preserve_macros,
         )
 
         results[arxiv_id] = (content, metadata)
@@ -384,6 +389,12 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument(
+        "--preserve-macros",
+        help="Preserve LaTeX macros in the converted markdown",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
     args = parser.parse_args()
 
     log_level = logging.DEBUG if args.verbose else logging.WARNING
@@ -404,7 +415,8 @@ def main():
         include_metadata=args.metadata,
         working_dir=args.cache_dir,
         pandoc_timeout=args.pandoc_timeout,
-        parse_citations=False,  # Not needed for command line.
+        parse_citations=False,
+        preserve_macros=args.preserve_macros,
     )
 
     # Handle output based on command-line arguments

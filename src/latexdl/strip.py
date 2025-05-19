@@ -26,12 +26,18 @@ def _run_pypandoc_conversion(
     )
 
 
-def strip(content: str, timeout: int = 60) -> str:
+def strip(
+    content: str,
+    timeout: int = 60,
+    *,
+    preserve_macros: bool = False,
+) -> str:
     """Strips LaTeX content to plain text using pandoc.
 
     Args:
         content: The LaTeX content to strip.
         timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
+        preserve_macros: Whether to preserve LaTeX macros. Defaults to False.
 
     Returns:
         The stripped plain text content.
@@ -50,7 +56,7 @@ def strip(content: str, timeout: int = 60) -> str:
         future = executor.submit(
             _run_pypandoc_conversion,
             content,
-            "latex-latex_macros",
+            "latex-latex_macros" if preserve_macros else "latex",
             "markdown",
             ["--wrap=none"],
         )
