@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import logging
-import pickle
 import re
 import tarfile
 import urllib.parse

@@ -1,6 +1,6 @@
 [project]
 name = "latexdl"
-version = "1.9.1"
+version = "2.0.0-beta0"
 description = ""
 authors = [{ name = "Nima Shoghi", email = "nimashoghi@gmail.com" }]
 requires-python = ">=3.10,<4.0"
@@ -19,8 +19,15 @@ dependencies = [
 [project.urls]
 homepage = "https://github.com/nimashoghi/latexdl"
 
+[project.optional-dependencies]
+mcp = [
+    "fastmcp",
+    "pydantic-ai",
+]
+
 [project.scripts]
 latexdl = "latexdl.main:main"
+latexdl-mcp = "latexdl.mcp:main"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "*"
