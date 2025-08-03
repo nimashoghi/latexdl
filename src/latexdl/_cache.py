@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import pickle
 from pathlib import Path
 
 import pydantic
