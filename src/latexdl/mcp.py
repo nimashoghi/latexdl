@@ -10,6 +10,10 @@ from .main import convert_arxiv_latex
 
 mcp = FastMCP("ArxivDL")
 
+# Environment variables:
+# - ARXIV_SUMMARIZATION_PROMPT: Custom prompt for paper summarization
+# - ARXIV_FALLBACK_TO_LATEX: Enable/disable fallback to LaTeX when markdown fails (default: "true")
+
 # Default summarization prompt
 DEFAULT_SUMMARIZATION_PROMPT = """
 Please provide a comprehensive summary of this research paper. Include:
@@ -25,6 +29,64 @@ Please keep the summary concise but thorough, suitable for someone who wants to 
 """
 
 
+def _should_fallback_to_latex() -> bool:
+    """Check if we should fallback to LaTeX when markdown conversion fails.
+
+    Returns:
+        True if fallback is enabled (default), False otherwise
+    """
+    fallback_env = os.getenv("ARXIV_FALLBACK_TO_LATEX", "true").lower()
+    return fallback_env in ("true", "1", "yes", "on")
+
+
+async def _robust_download_paper(arxiv_id: str) -> str:
+    """Download paper with robust fallback behavior.
+
+    Tries to convert to markdown first, falls back to LaTeX if markdown conversion fails
+    and fallback is enabled via environment variable.
+
+    Args:
+        arxiv_id: The arXiv ID of the paper to download
+
+    Returns:
+        The paper content (markdown if successful, LaTeX if fallback enabled)
+
+    Raises:
+        Exception: If both markdown and LaTeX downloads fail, or if fallback is disabled
+    """
+    try:
+        # First, try to convert to markdown
+        content, metadata = convert_arxiv_latex(
+            arxiv_id,
+            markdown=True,
+            include_bibliography=True,
+            include_metadata=True,
+            use_cache=True,
+        )
+        return content
+    except Exception as markdown_error:
+        # If markdown conversion fails and fallback is enabled, try LaTeX
+        if _should_fallback_to_latex():
+            try:
+                content, metadata = convert_arxiv_latex(
+                    arxiv_id,
+                    markdown=False,  # Get raw LaTeX
+                    include_bibliography=True,
+                    include_metadata=True,
+                    use_cache=True,
+                )
+                return content
+            except Exception as latex_error:
+                # Both conversions failed
+                raise Exception(
+                    f"Both markdown and LaTeX conversion failed. "
+                    f"Markdown error: {markdown_error}. LaTeX error: {latex_error}"
+                )
+        else:
+            # Fallback is disabled, re-raise the original markdown error
+            raise markdown_error
+
+
 @mcp.tool(
     name="download_paper_content",
     description="Download and extract the full text content of an arXiv paper given its ID.",
@@ -38,19 +100,10 @@ async def download_paper_content(
         arxiv_id: The arXiv ID of the paper to download
 
     Returns:
-        The full text content of the paper in markdown format
+        The full text content of the paper (markdown if possible, LaTeX if fallback enabled)
     """
     try:
-        # Convert to markdown with all metadata and bibliography
-        content, metadata = convert_arxiv_latex(
-            arxiv_id,
-            markdown=True,
-            include_bibliography=True,
-            include_metadata=True,
-            use_cache=True,
-        )
-
-        return content
+        return await _robust_download_paper(arxiv_id)
     except Exception as e:
         return f"Error downloading paper {arxiv_id}: {str(e)}"
 
@@ -73,14 +126,8 @@ async def summarize_paper(
         An AI-generated summary of the paper
     """
     try:
-        # First, download the paper content
-        content, metadata = convert_arxiv_latex(
-            arxiv_id,
-            markdown=True,
-            include_bibliography=True,
-            include_metadata=True,
-            use_cache=True,
-        )
+        # First, download the paper content using robust method
+        content = await _robust_download_paper(arxiv_id)
 
         # Get the summarization prompt from environment or use default
         summarization_prompt = os.getenv(
