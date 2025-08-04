@@ -110,17 +110,23 @@ async def download_paper_content(
 
 @mcp.tool(
     name="summarize_paper",
-    description="Download an arXiv paper and generate an AI-powered summary using a high-capability model.",
+    description="Download an arXiv paper and generate an AI-powered summary using a high-capability model. Optionally accepts a custom prompt to focus the summary on specific aspects or questions.",
 )
 async def summarize_paper(
     arxiv_id: Annotated[str, "ArXiv paper ID (e.g., '2103.12345' or '2103.12345v1')"],
     ctx: Context,
+    custom_prompt: Annotated[
+        str | None,
+        "Optional custom prompt for summarization. If provided, this will be used instead of the default prompt. You can include specific questions or focus areas for the summary.",
+    ] = None,
 ) -> str:
     """Download a paper and generate a comprehensive summary using AI.
 
     Args:
         arxiv_id: The arXiv ID of the paper to download and summarize
         ctx: MCP context for sampling
+        custom_prompt: Optional custom prompt to override the default summarization prompt.
+                      Use this to ask specific questions or focus on particular aspects of the paper.
 
     Returns:
         An AI-generated summary of the paper
@@ -129,10 +135,13 @@ async def summarize_paper(
         # First, download the paper content using robust method
         content = await _robust_download_paper(arxiv_id)
 
-        # Get the summarization prompt from environment or use default
-        summarization_prompt = os.getenv(
-            "ARXIV_SUMMARIZATION_PROMPT", DEFAULT_SUMMARIZATION_PROMPT
-        )
+        # Use custom prompt if provided, otherwise use environment variable or default
+        if custom_prompt is not None:
+            summarization_prompt = custom_prompt
+        else:
+            summarization_prompt = os.getenv(
+                "ARXIV_SUMMARIZATION_PROMPT", DEFAULT_SUMMARIZATION_PROMPT
+            )
 
         # Prepare the full prompt for the AI model
         full_prompt = f"""
@@ -162,7 +171,7 @@ Here is the paper content:
         )
 
         # Extract text from the response
-        return reply.text  # type: ignore
+        return reply.text
 
     except Exception as e:
         return f"Error summarizing paper {arxiv_id}: {str(e)}"
