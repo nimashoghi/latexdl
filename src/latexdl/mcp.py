@@ -159,7 +159,7 @@ Here is the paper content:
             intelligencePriority=0.99,
             speedPriority=0.01,
             costPriority=0.01,
-            hints=[ModelHint(name="o3")],
+            hints=[ModelHint(name="github.copilot-chat/o3")],
         )
 
         # Sample from the AI model
