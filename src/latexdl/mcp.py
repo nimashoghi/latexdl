@@ -4,7 +4,7 @@ import os
 from typing import Annotated
 
 from fastmcp import Context, FastMCP
-from mcp.types import ModelHint, ModelPreferences
+from mcp.types import ModelHint, ModelPreferences, TextContent
 
 from .main import convert_arxiv_latex
 
@@ -171,6 +171,7 @@ Here is the paper content:
         )
 
         # Extract text from the response
+        assert isinstance(reply, TextContent), "Expected a TextContent response"
         return reply.text
 
     except Exception as e:
