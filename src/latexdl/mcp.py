@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Annotated
 
 from fastmcp import Context, FastMCP
@@ -8,11 +9,13 @@ from mcp.types import ModelHint, ModelPreferences, TextContent
 
 from .main import convert_arxiv_latex
 
-mcp = FastMCP("ArxivDL")
+mcp = FastMCP("latexdl")
 
 # Environment variables:
+# - ARXIV_CACHE_ENABLED: Enable/disable summary caching (default: "false")
+# - ARXIV_CACHE_PATH: Path to the directory for summary cache. Required if caching is enabled.
 # - ARXIV_SUMMARIZATION_PROMPT: Custom prompt for paper summarization
-# - ARXIV_FALLBACK_TO_LATEX: Enable/disable fallback to LaTeX when markdown fails (default: "true")
+# - ARXIV_FALLBACK_TO_LATEX: Enable/disable fallback to LaTeX when fails (default: "true")
 
 # Default summarization prompt
 DEFAULT_SUMMARIZATION_PROMPT = """
@@ -27,6 +30,27 @@ Please provide a comprehensive summary of this research paper. Include:
 
 Please keep the summary concise but thorough, suitable for someone who wants to quickly understand the paper's essence.
 """
+
+
+def _get_summary_cache_path() -> Path | None:
+    """Check for summary cache env vars and return the path if valid."""
+    cache_enabled = os.getenv("ARXIV_CACHE_ENABLED", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+        "on",
+    )
+    if not cache_enabled:
+        return None
+
+    cache_path_str = os.getenv("ARXIV_CACHE_PATH")
+    if not cache_path_str:
+        raise ValueError(
+            "ARXIV_CACHE_ENABLED is true, but ARXIV_CACHE_PATH is not set. "
+            "Please set the cache path environment variable."
+        )
+
+    return Path(cache_path_str)
 
 
 def _should_fallback_to_latex() -> bool:
@@ -110,38 +134,41 @@ async def download_paper_content(
 
 @mcp.tool(
     name="summarize_paper",
-    description="Download an arXiv paper and generate an AI-powered summary using a high-capability model. Optionally accepts a custom prompt to focus the summary on specific aspects or questions.",
+    description="Download an arXiv paper and generate an AI-powered summary using a high-capability model.",
 )
 async def summarize_paper(
     arxiv_id: Annotated[str, "ArXiv paper ID (e.g., '2103.12345' or '2103.12345v1')"],
     ctx: Context,
-    custom_prompt: Annotated[
-        str | None,
-        "Optional custom prompt for summarization. If provided, this will be used instead of the default prompt. You can include specific questions or focus areas for the summary.",
-    ] = None,
 ) -> str:
     """Download a paper and generate a comprehensive summary using AI.
 
     Args:
         arxiv_id: The arXiv ID of the paper to download and summarize
         ctx: MCP context for sampling
-        custom_prompt: Optional custom prompt to override the default summarization prompt.
-                      Use this to ask specific questions or focus on particular aspects of the paper.
 
     Returns:
         An AI-generated summary of the paper
     """
     try:
+        cache_dir = _get_summary_cache_path()
+        cache_file: Path | None = None
+
+        if cache_dir:
+            # Sanitize arxiv_id to create a valid filename
+            sanitized_id = "".join(c for c in arxiv_id if c.isalnum() or c in "._-")
+            cache_file = cache_dir / f"{sanitized_id}.md"
+
+            # Check if summary exists in cache
+            if cache_file.is_file():
+                return cache_file.read_text()
+
         # First, download the paper content using robust method
         content = await _robust_download_paper(arxiv_id)
 
-        # Use custom prompt if provided, otherwise use environment variable or default
-        if custom_prompt is not None:
-            summarization_prompt = custom_prompt
-        else:
-            summarization_prompt = os.getenv(
-                "ARXIV_SUMMARIZATION_PROMPT", DEFAULT_SUMMARIZATION_PROMPT
-            )
+        # Use environment variable or default for the prompt
+        summarization_prompt = os.getenv(
+            "ARXIV_SUMMARIZATION_PROMPT", DEFAULT_SUMMARIZATION_PROMPT
+        )
 
         # Prepare the full prompt for the AI model
         full_prompt = f"""
@@ -172,7 +199,14 @@ Here is the paper content:
 
         # Extract text from the response
         assert isinstance(reply, TextContent), "Expected a TextContent response"
-        return reply.text
+        summary = reply.text
+
+        # Save the new summary to the cache if enabled
+        if cache_file and cache_dir:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(summary)
+
+        return summary
 
     except Exception as e:
         return f"Error summarizing paper {arxiv_id}: {str(e)}"
