@@ -14,6 +14,7 @@ mcp = FastMCP("latexdl")
 # Environment variables:
 # - ARXIV_CACHE_ENABLED: Enable/disable summary caching (default: "false")
 # - ARXIV_CACHE_PATH: Path to the directory for summary cache. Required if caching is enabled.
+# - ARXIV_ENABLE_DOWNLOAD_TOOL: Enable the 'download_paper_content' tool (default: "false")
 # - ARXIV_SUMMARIZATION_PROMPT: Custom prompt for paper summarization
 # - ARXIV_FALLBACK_TO_LATEX: Enable/disable fallback to LaTeX when fails (default: "true")
 
@@ -111,25 +112,34 @@ async def _robust_download_paper(arxiv_id: str) -> str:
             raise markdown_error
 
 
-@mcp.tool(
-    name="download_paper_content",
-    description="Download and extract the full text content of an arXiv paper given its ID.",
-)
-async def download_paper_content(
-    arxiv_id: Annotated[str, "ArXiv paper ID (e.g., '2103.12345' or '2103.12345v1')"],
-) -> str:
-    """Download the full content of an arXiv paper.
+if os.getenv("ARXIV_ENABLE_DOWNLOAD_TOOL", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+):
 
-    Args:
-        arxiv_id: The arXiv ID of the paper to download
+    @mcp.tool(
+        name="download_paper_content",
+        description="Download and extract the full text content of an arXiv paper given its ID.",
+    )
+    async def download_paper_content(
+        arxiv_id: Annotated[
+            str, "ArXiv paper ID (e.g., '2103.12345' or '2103.12345v1')"
+        ],
+    ) -> str:
+        """Download the full content of an arXiv paper.
 
-    Returns:
-        The full text content of the paper (markdown if possible, LaTeX if fallback enabled)
-    """
-    try:
-        return await _robust_download_paper(arxiv_id)
-    except Exception as e:
-        return f"Error downloading paper {arxiv_id}: {str(e)}"
+        Args:
+            arxiv_id: The arXiv ID of the paper to download
+
+        Returns:
+            The full text content of the paper (markdown if possible, LaTeX if fallback enabled)
+        """
+        try:
+            return await _robust_download_paper(arxiv_id)
+        except Exception as e:
+            return f"Error downloading paper {arxiv_id}: {str(e)}"
 
 
 @mcp.tool(
