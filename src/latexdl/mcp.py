@@ -143,10 +143,10 @@ if os.getenv("ARXIV_ENABLE_DOWNLOAD_TOOL", "false").lower() in (
 
 
 @mcp.tool(
-    name="summarize_paper",
+    name="summarize_arxiv_paper",
     description="Download an arXiv paper and generate an AI-powered summary using a high-capability model.",
 )
-async def summarize_paper(
+async def summarize_arxiv_paper(
     arxiv_id: Annotated[str, "ArXiv paper ID (e.g., '2103.12345' or '2103.12345v1')"],
     ctx: Context,
 ) -> str:
