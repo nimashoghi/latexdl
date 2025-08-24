@@ -112,7 +112,7 @@ async def _robust_download_paper(arxiv_id: str) -> str:
             raise markdown_error
 
 
-if os.getenv("ARXIV_ENABLE_DOWNLOAD_TOOL", "false").lower() in (
+if os.getenv("ARXIV_ENABLE_DOWNLOAD_TOOL", "1").lower() in (
     "true",
     "1",
     "yes",
