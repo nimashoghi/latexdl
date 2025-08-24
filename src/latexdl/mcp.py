@@ -143,6 +143,66 @@ if os.getenv("ARXIV_ENABLE_DOWNLOAD_TOOL", "1").lower() in (
 
 
 @mcp.tool(
+    name="analyze_arxiv_paper",
+    description="Download an arXiv paper and ask specific questions about it using a custom prompt and a high-capability model.",
+)
+async def analyze_arxiv_paper(
+    arxiv_id: Annotated[str, "ArXiv paper ID (e.g., '2103.12345' or '2103.12345v1')"],
+    custom_prompt: Annotated[str, "Custom question or analysis prompt about the paper"],
+    ctx: Context,
+) -> str:
+    """Download a paper and analyze it based on a custom prompt using AI.
+
+    Args:
+        arxiv_id: The arXiv ID of the paper to download and analyze
+        custom_prompt: The specific question or analysis you want to perform on the paper
+        ctx: MCP context for sampling
+
+    Returns:
+        An AI-generated analysis based on the custom prompt
+    """
+    try:
+        # Download the paper content using robust method
+        content = await _robust_download_paper(arxiv_id)
+
+        # Prepare the full prompt for the AI model
+        full_prompt = f"""
+{custom_prompt}
+
+---
+
+Here is the paper content:
+
+{content}
+"""
+
+        # Use model preferences to strongly prefer o3
+        prefs = ModelPreferences(
+            intelligencePriority=0.99,
+            speedPriority=0.01,
+            costPriority=0.01,
+            hints=[ModelHint(name="github.copilot-chat/o3")],
+        )
+
+        # Sample from the AI model
+        reply = await ctx.sample(
+            messages=full_prompt,
+            max_tokens=16384,
+            temperature=0.2,
+            model_preferences=prefs,
+        )
+
+        # Extract text from the response
+        assert isinstance(reply, TextContent), "Expected a TextContent response"
+        analysis = reply.text
+
+        return analysis
+
+    except Exception as e:
+        return f"Error analyzing paper {arxiv_id}: {str(e)}"
+
+
+@mcp.tool(
     name="summarize_arxiv_paper",
     description="Download an arXiv paper and generate an AI-powered summary using a high-capability model.",
 )
