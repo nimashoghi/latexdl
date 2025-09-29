@@ -1,15 +1,56 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
+from fastmcp.experimental.sampling.handlers.openai import OpenAISamplingHandler
 from mcp.types import ModelHint, ModelPreferences, TextContent
 
 from .main import convert_arxiv_latex
 
-mcp = FastMCP("latexdl")
+
+def _sampling_handler_kwargs() -> dict[str, Any]:
+    # Use OpenAI handler if OPENAI_API_KEY is set, otherwise nothing
+    if (key := os.getenv("OPENAI_API_KEY")) is None:
+        return {}
+
+    if importlib.util.find_spec("openai") is None:
+        raise ImportError(
+            "The 'openai' package is required for OpenAI sampling handler. Please install it via 'pip install openai'."
+        )
+
+    if (
+        sampling_handler_behavior := os.getenv("SAMPLING_HANDLER_BEHAVIOR", "fallback")
+    ) not in ("fallback", "always"):
+        raise ValueError(
+            "Invalid SAMPLING_HANDLER_BEHAVIOR value. Must be 'fallback' or 'always'. "
+            f"Got: {sampling_handler_behavior}"
+        )
+
+    from openai import Client
+    from openai.types import ChatModel
+    from pydantic import TypeAdapter
+
+    default_model = TypeAdapter(ChatModel).validate_python(
+        os.getenv("OPENAI_MODEL", "o3")
+    )
+
+    return {
+        "sampling_handler": OpenAISamplingHandler(
+            default_model=default_model,
+            client=Client(
+                api_key=key,
+                base_url=os.getenv("OPENAI_API_BASE"),
+            ),
+        ),
+        "sampling_handler_behavior": sampling_handler_behavior,
+    }
+
+
+mcp = FastMCP("latexdl", **_sampling_handler_kwargs())
 
 # Environment variables:
 # - ARXIV_CACHE_ENABLED: Enable/disable summary caching (default: "false")
