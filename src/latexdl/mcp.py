@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import xml.etree.ElementTree as ET
 from typing import Annotated
 
 from fastmcp import FastMCP
@@ -66,6 +68,81 @@ async def _robust_download_paper(arxiv_id: str) -> str:
             raise markdown_error
 
 
+def _parse_markdown_hierarchy(markdown_text: str) -> list[dict[str, any]]:
+    """Parse markdown headings into a hierarchical structure.
+
+    Args:
+        markdown_text: The markdown content to parse
+
+    Returns:
+        A list of root-level sections, each with potential nested children
+    """
+    # Extract all heading lines with their levels
+    heading_pattern = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
+    headings = [
+        {"level": len(match.group(1)), "title": match.group(2).strip()}
+        for match in heading_pattern.finditer(markdown_text)
+    ]
+
+    if not headings:
+        return []
+
+    # Build hierarchical structure
+    root: list[dict[str, any]] = []
+    stack: list[dict[str, any]] = []
+
+    for heading in headings:
+        node = {
+            "level": heading["level"],
+            "title": heading["title"],
+            "children": [],
+        }
+
+        # Find the correct parent by popping from stack until we find appropriate level
+        while stack and stack[-1]["level"] >= heading["level"]:
+            stack.pop()
+
+        if not stack:
+            # This is a root-level heading
+            root.append(node)
+        else:
+            # Add as child of the last item in stack
+            stack[-1]["children"].append(node)
+
+        stack.append(node)
+
+    return root
+
+
+def _tree_to_xml(tree: list[dict[str, any]], arxiv_id: str) -> str:
+    """Convert hierarchical structure to XML string.
+
+    Args:
+        tree: The hierarchical section structure
+        arxiv_id: The arXiv ID of the paper
+
+    Returns:
+        XML string representation of the structure
+    """
+    root = ET.Element("paper")
+    root.set("arxiv_id", arxiv_id)
+
+    def add_sections(parent_elem: ET.Element, sections: list[dict[str, any]]) -> None:
+        for section in sections:
+            section_elem = ET.SubElement(parent_elem, "section")
+            section_elem.set("level", str(section["level"]))
+            section_elem.set("title", section["title"])
+
+            if section["children"]:
+                add_sections(section_elem, section["children"])
+
+    add_sections(root, tree)
+
+    # Convert to string with pretty formatting
+    ET.indent(root, space="  ")
+    return ET.tostring(root, encoding="unicode", xml_declaration=True)
+
+
 @mcp.tool(
     name="download_paper_content",
     description="Download and extract the full text content of an arXiv paper given its ID.",
@@ -85,6 +162,46 @@ async def download_paper_content(
         return await _robust_download_paper(arxiv_id)
     except Exception as e:
         return f"Error downloading paper {arxiv_id}: {str(e)}"
+
+
+@mcp.tool(
+    name="get_paper_structure",
+    description="Extract the hierarchical section structure of an arXiv paper as XML. Only works for papers that can be converted to markdown.",
+)
+async def get_paper_structure(
+    arxiv_id: Annotated[str, "ArXiv paper ID (e.g., '2103.12345' or '2103.12345v1')"],
+) -> str:
+    """Get the hierarchical section structure of a paper as XML.
+
+    This tool downloads the paper, converts it to markdown, and extracts
+    the heading hierarchy without the actual content text.
+
+    Args:
+        arxiv_id: The arXiv ID of the paper
+
+    Returns:
+        XML representation of the paper's section structure
+    """
+    try:
+        # Download as markdown (no fallback to LaTeX since we need markdown structure)
+        content, metadata = convert_arxiv_latex(
+            arxiv_id,
+            markdown=True,
+            include_bibliography=True,
+            include_metadata=True,
+            use_cache=True,
+        )
+
+        # Parse the hierarchy
+        tree = _parse_markdown_hierarchy(content)
+
+        # Convert to XML
+        xml_str = _tree_to_xml(tree, arxiv_id)
+
+        return xml_str
+
+    except Exception as e:
+        return f"Error extracting paper structure for {arxiv_id}: {str(e)}"
 
 
 def main():
