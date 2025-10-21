@@ -15,7 +15,9 @@ mcp = FastMCP("latexdl")
 # - ARXIV_FALLBACK_TO_LATEX: Enable/disable fallback to LaTeX when markdown conversion fails (default: "true")
 
 
-async def _robust_download_paper(arxiv_id: str) -> str:
+async def _robust_download_paper(
+    arxiv_id: str, include_bibliography: bool = False
+) -> str:
     """Download paper with robust fallback behavior.
 
     Tries to convert to markdown first, falls back to LaTeX if markdown conversion fails
@@ -23,6 +25,7 @@ async def _robust_download_paper(arxiv_id: str) -> str:
 
     Args:
         arxiv_id: The arXiv ID of the paper to download
+        include_bibliography: Whether to include the bibliography section
 
     Returns:
         The paper content (markdown if successful, LaTeX if fallback enabled)
@@ -35,7 +38,7 @@ async def _robust_download_paper(arxiv_id: str) -> str:
         content, metadata = convert_arxiv_latex(
             arxiv_id,
             markdown=True,
-            include_bibliography=True,
+            include_bibliography=include_bibliography,
             include_metadata=True,
             use_cache=True,
         )
@@ -52,7 +55,7 @@ async def _robust_download_paper(arxiv_id: str) -> str:
                 content, metadata = convert_arxiv_latex(
                     arxiv_id,
                     markdown=False,  # Get raw LaTeX
-                    include_bibliography=True,
+                    include_bibliography=include_bibliography,
                     include_metadata=True,
                     use_cache=True,
                 )
@@ -213,17 +216,21 @@ def _tree_to_xml(tree: list[dict[str, Any]], arxiv_id: str) -> str:
 )
 async def download_paper_content(
     arxiv_id: Annotated[str, "ArXiv paper ID (e.g., '2103.12345' or '2103.12345v1')"],
+    include_bibliography: Annotated[
+        bool, "Whether to include the bibliography section (default: False)"
+    ] = False,
 ) -> str:
     """Download the full content of an arXiv paper.
 
     Args:
         arxiv_id: The arXiv ID of the paper to download
+        include_bibliography: Whether to include the bibliography section
 
     Returns:
         The full text content of the paper (markdown if possible, LaTeX if fallback enabled)
     """
     try:
-        return await _robust_download_paper(arxiv_id)
+        return await _robust_download_paper(arxiv_id, include_bibliography)
     except Exception as e:
         return f"Error downloading paper {arxiv_id}: {str(e)}"
 
