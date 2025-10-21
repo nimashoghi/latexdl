@@ -158,6 +158,7 @@ def convert_arxiv_latex(
     pandoc_timeout: int = 60,
     parse_citations: bool = True,
     preserve_macros: bool = False,
+    parse_citations_separately: bool = False,
 ) -> tuple[str, ArxivMetadata | None]:
     """
     Convert an arXiv paper to expanded LaTeX or markdown.
@@ -174,6 +175,7 @@ def convert_arxiv_latex(
         pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
         parse_citations: Whether to parse citations in the LaTeX file
         preserve_macros: Whether to preserve LaTeX macros in the converted markdown.
+        parse_citations_separately: If True, parse citations even when include_bibliography is False
     Returns:
         The expanded LaTeX or converted markdown content as a string, and
         the metadata as an ArxivMetadata object (if `include_metadata` is True).
@@ -183,7 +185,7 @@ def convert_arxiv_latex(
         RuntimeError: If the main LaTeX file cannot be found
         ValueError: If the arXiv ID format is invalid
     """
-    if parse_citations and not include_bibliography:
+    if parse_citations and not include_bibliography and not parse_citations_separately:
         raise ValueError("Cannot parse citations without including bibliography")
     if parse_citations and not include_metadata:
         raise ValueError("Cannot parse citations without including metadata")
@@ -247,6 +249,18 @@ def convert_arxiv_latex(
 
         if parse_citations:
             metadata = dataclasses.replace(metadata, citations=bib_content.citations)
+    elif parse_citations_separately and (
+        bib_content := detect_and_collect_bibtex(
+            src_dir,
+            expanded_latex,
+            main_tex_path=main_file,
+            markdown=markdown,
+            parse_citations=True,
+        )
+    ):
+        # Parse citations but don't include bibliography in output
+        if parse_citations:
+            metadata = dataclasses.replace(metadata, citations=bib_content.citations)
 
     if use_cache:
         save_cache(temp_dir, content, metadata)
@@ -267,6 +281,7 @@ def batch_convert_arxiv_papers(
     pandoc_timeout: int = 60,
     parse_citations: bool = True,
     preserve_macros: bool = False,
+    parse_citations_separately: bool = False,
 ) -> dict[str, tuple[str, ArxivMetadata | None]]:
     """
     Convert multiple arXiv papers to expanded LaTeX or markdown.
@@ -284,6 +299,7 @@ def batch_convert_arxiv_papers(
         pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
         parse_citations: Whether to parse citations in the LaTeX file
         preserve_macros: Whether to preserve LaTeX macros in the converted markdown.
+        parse_citations_separately: If True, parse citations even when include_bibliography is False
     Returns:
         Dictionary mapping arXiv IDs to their converted content and metadata
     """
@@ -311,6 +327,7 @@ def batch_convert_arxiv_papers(
             pandoc_timeout=pandoc_timeout,
             parse_citations=parse_citations,
             preserve_macros=preserve_macros,
+            parse_citations_separately=parse_citations_separately,
         )
 
         results[arxiv_id] = (content, metadata)

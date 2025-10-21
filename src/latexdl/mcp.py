@@ -41,6 +41,8 @@ async def _robust_download_paper(
             include_bibliography=include_bibliography,
             include_metadata=True,
             use_cache=True,
+            parse_citations=True,
+            parse_citations_separately=True,
         )
         return content
     except Exception as markdown_error:
@@ -58,6 +60,8 @@ async def _robust_download_paper(
                     include_bibliography=include_bibliography,
                     include_metadata=True,
                     use_cache=True,
+                    parse_citations=True,
+                    parse_citations_separately=True,
                 )
                 return content
             except Exception as latex_error:
