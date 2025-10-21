@@ -211,10 +211,10 @@ def _tree_to_xml(tree: list[dict[str, Any]], arxiv_id: str) -> str:
 
 
 @mcp.tool(
-    name="download_paper_content",
+    name="read_paper",
     description="Download and extract the full text content of an arXiv paper given its ID.",
 )
-async def download_paper_content(
+async def read_paper(
     arxiv_id: Annotated[str, "ArXiv paper ID (e.g., '2103.12345' or '2103.12345v1')"],
     include_bibliography: Annotated[
         bool, "Whether to include the bibliography section (default: False)"
