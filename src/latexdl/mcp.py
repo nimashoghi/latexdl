@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 import xml.etree.ElementTree as ET
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
 
@@ -68,7 +68,7 @@ async def _robust_download_paper(arxiv_id: str) -> str:
             raise markdown_error
 
 
-def _parse_markdown_hierarchy(markdown_text: str) -> list[dict[str, any]]:
+def _parse_markdown_hierarchy(markdown_text: str) -> list[dict[str, Any]]:
     """Parse markdown headings into a hierarchical structure.
 
     Args:
@@ -88,8 +88,8 @@ def _parse_markdown_hierarchy(markdown_text: str) -> list[dict[str, any]]:
         return []
 
     # Build hierarchical structure
-    root: list[dict[str, any]] = []
-    stack: list[dict[str, any]] = []
+    root: list[dict[str, Any]] = []
+    stack: list[dict[str, Any]] = []
 
     for heading in headings:
         node = {
@@ -114,7 +114,7 @@ def _parse_markdown_hierarchy(markdown_text: str) -> list[dict[str, any]]:
     return root
 
 
-def _tree_to_xml(tree: list[dict[str, any]], arxiv_id: str) -> str:
+def _tree_to_xml(tree: list[dict[str, Any]], arxiv_id: str) -> str:
     """Convert hierarchical structure to XML string.
 
     Args:
@@ -127,7 +127,7 @@ def _tree_to_xml(tree: list[dict[str, any]], arxiv_id: str) -> str:
     root = ET.Element("paper")
     root.set("arxiv_id", arxiv_id)
 
-    def add_sections(parent_elem: ET.Element, sections: list[dict[str, any]]) -> None:
+    def add_sections(parent_elem: ET.Element, sections: list[dict[str, Any]]) -> None:
         for section in sections:
             section_elem = ET.SubElement(parent_elem, "section")
             section_elem.set("level", str(section["level"]))
