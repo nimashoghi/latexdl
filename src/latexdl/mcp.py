@@ -114,6 +114,70 @@ def _parse_markdown_hierarchy(markdown_text: str) -> list[dict[str, Any]]:
     return root
 
 
+def _parse_latex_hierarchy(latex_text: str) -> list[dict[str, Any]]:
+    """Parse LaTeX section commands into a hierarchical structure.
+
+    Args:
+        latex_text: The LaTeX content to parse
+
+    Returns:
+        A list of root-level sections, each with potential nested children
+    """
+    # Map LaTeX section commands to levels
+    section_levels = {
+        "part": 0,
+        "chapter": 1,
+        "section": 2,
+        "subsection": 3,
+        "subsubsection": 4,
+        "paragraph": 5,
+        "subparagraph": 6,
+    }
+
+    # Pattern to match section commands: \section{title} or \section*{title}
+    section_pattern = re.compile(
+        r"\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\{([^}]+)\}",
+        re.MULTILINE,
+    )
+
+    sections = [
+        {
+            "level": section_levels[match.group(1)],
+            "title": match.group(2).strip(),
+        }
+        for match in section_pattern.finditer(latex_text)
+    ]
+
+    if not sections:
+        return []
+
+    # Build hierarchical structure
+    root: list[dict[str, Any]] = []
+    stack: list[dict[str, Any]] = []
+
+    for section in sections:
+        node = {
+            "level": section["level"],
+            "title": section["title"],
+            "children": [],
+        }
+
+        # Find the correct parent by popping from stack until we find appropriate level
+        while stack and stack[-1]["level"] >= section["level"]:
+            stack.pop()
+
+        if not stack:
+            # This is a root-level section
+            root.append(node)
+        else:
+            # Add as child of the last item in stack
+            stack[-1]["children"].append(node)
+
+        stack.append(node)
+
+    return root
+
+
 def _tree_to_xml(tree: list[dict[str, Any]], arxiv_id: str) -> str:
     """Convert hierarchical structure to XML string.
 
@@ -166,15 +230,16 @@ async def download_paper_content(
 
 @mcp.tool(
     name="get_paper_structure",
-    description="Extract the hierarchical section structure of an arXiv paper as XML. Only works for papers that can be converted to markdown.",
+    description="Extract the hierarchical section structure of an arXiv paper as XML. Works for both markdown and LaTeX papers.",
 )
 async def get_paper_structure(
     arxiv_id: Annotated[str, "ArXiv paper ID (e.g., '2103.12345' or '2103.12345v1')"],
 ) -> str:
     """Get the hierarchical section structure of a paper as XML.
 
-    This tool downloads the paper, converts it to markdown, and extracts
-    the heading hierarchy without the actual content text.
+    This tool downloads the paper and extracts the heading hierarchy without
+    the actual content text. It tries markdown first, then falls back to
+    parsing LaTeX section commands if markdown conversion fails.
 
     Args:
         arxiv_id: The arXiv ID of the paper
@@ -183,17 +248,26 @@ async def get_paper_structure(
         XML representation of the paper's section structure
     """
     try:
-        # Download as markdown (no fallback to LaTeX since we need markdown structure)
-        content, metadata = convert_arxiv_latex(
-            arxiv_id,
-            markdown=True,
-            include_bibliography=True,
-            include_metadata=True,
-            use_cache=True,
-        )
-
-        # Parse the hierarchy
-        tree = _parse_markdown_hierarchy(content)
+        # Try markdown first
+        try:
+            content, metadata = convert_arxiv_latex(
+                arxiv_id,
+                markdown=True,
+                include_bibliography=True,
+                include_metadata=True,
+                use_cache=True,
+            )
+            tree = _parse_markdown_hierarchy(content)
+        except Exception:
+            # Fallback to LaTeX parsing
+            content, metadata = convert_arxiv_latex(
+                arxiv_id,
+                markdown=False,
+                include_bibliography=True,
+                include_metadata=True,
+                use_cache=True,
+            )
+            tree = _parse_latex_hierarchy(content)
 
         # Convert to XML
         xml_str = _tree_to_xml(tree, arxiv_id)
