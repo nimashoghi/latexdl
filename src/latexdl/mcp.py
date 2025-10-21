@@ -13,16 +13,6 @@ mcp = FastMCP("latexdl")
 # - ARXIV_FALLBACK_TO_LATEX: Enable/disable fallback to LaTeX when markdown conversion fails (default: "true")
 
 
-def _should_fallback_to_latex() -> bool:
-    """Check if we should fallback to LaTeX when markdown conversion fails.
-
-    Returns:
-        True if fallback is enabled (default), False otherwise
-    """
-    fallback_env = os.getenv("ARXIV_FALLBACK_TO_LATEX", "true").lower()
-    return fallback_env in ("true", "1", "yes", "on")
-
-
 async def _robust_download_paper(arxiv_id: str) -> str:
     """Download paper with robust fallback behavior.
 
@@ -50,7 +40,12 @@ async def _robust_download_paper(arxiv_id: str) -> str:
         return content
     except Exception as markdown_error:
         # If markdown conversion fails and fallback is enabled, try LaTeX
-        if _should_fallback_to_latex():
+        if os.getenv("ARXIV_FALLBACK_TO_LATEX", "true").lower() in (
+            "true",
+            "1",
+            "yes",
+            "on",
+        ):
             try:
                 content, metadata = convert_arxiv_latex(
                     arxiv_id,
