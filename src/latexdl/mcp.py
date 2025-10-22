@@ -1,78 +1,36 @@
 from __future__ import annotations
 
-import os
+import importlib.util
 import re
 import xml.etree.ElementTree as ET
 from typing import Annotated, Any
 
+_OPTIONAL_MCP_PACKAGES = {
+    "fastmcp": "latexdl[mcp]",
+    "pydantic_ai": "latexdl[mcp]",
+    "openai": "latexdl[mcp]",
+}
+
+# Fail fast with guidance if optional MCP dependencies are missing.
+_missing_optional = [
+    pkg for pkg in _OPTIONAL_MCP_PACKAGES if importlib.util.find_spec(pkg) is None
+]
+if _missing_optional:
+    missing = ", ".join(sorted(_missing_optional))
+    hint = _OPTIONAL_MCP_PACKAGES[_missing_optional[0]]
+    raise ImportError(
+        f"Missing optional MCP dependencies: {missing}. "
+        f"Install via `pip install {hint}`."
+    )
+
 from fastmcp import FastMCP
 
-from .main import convert_arxiv_latex
+from .main import convert_arxiv_latex, robust_download_paper
 
 mcp = FastMCP("latexdl")
 
 # Environment variables:
 # - ARXIV_FALLBACK_TO_LATEX: Enable/disable fallback to LaTeX when markdown conversion fails (default: "true")
-
-
-async def _robust_download_paper(
-    arxiv_id: str, include_bibliography: bool = False
-) -> str:
-    """Download paper with robust fallback behavior.
-
-    Tries to convert to markdown first, falls back to LaTeX if markdown conversion fails
-    and fallback is enabled via environment variable.
-
-    Args:
-        arxiv_id: The arXiv ID of the paper to download
-        include_bibliography: Whether to include the bibliography section
-
-    Returns:
-        The paper content (markdown if successful, LaTeX if fallback enabled)
-
-    Raises:
-        Exception: If both markdown and LaTeX downloads fail, or if fallback is disabled
-    """
-    try:
-        # First, try to convert to markdown
-        content, metadata = convert_arxiv_latex(
-            arxiv_id,
-            markdown=True,
-            include_bibliography=include_bibliography,
-            include_metadata=True,
-            use_cache=True,
-            parse_citations=True,
-            parse_citations_separately=True,
-        )
-        return content
-    except Exception as markdown_error:
-        # If markdown conversion fails and fallback is enabled, try LaTeX
-        if os.getenv("ARXIV_FALLBACK_TO_LATEX", "true").lower() in (
-            "true",
-            "1",
-            "yes",
-            "on",
-        ):
-            try:
-                content, metadata = convert_arxiv_latex(
-                    arxiv_id,
-                    markdown=False,  # Get raw LaTeX
-                    include_bibliography=include_bibliography,
-                    include_metadata=True,
-                    use_cache=True,
-                    parse_citations=True,
-                    parse_citations_separately=True,
-                )
-                return content
-            except Exception as latex_error:
-                # Both conversions failed
-                raise Exception(
-                    f"Both markdown and LaTeX conversion failed. "
-                    f"Markdown error: {markdown_error}. LaTeX error: {latex_error}"
-                )
-        else:
-            # Fallback is disabled, re-raise the original markdown error
-            raise markdown_error
 
 
 def _parse_markdown_hierarchy(markdown_text: str) -> list[dict[str, Any]]:
@@ -234,7 +192,7 @@ async def read_paper(
         The full text content of the paper (markdown if possible, LaTeX if fallback enabled)
     """
     try:
-        return await _robust_download_paper(arxiv_id, include_bibliography)
+        return await robust_download_paper(arxiv_id, include_bibliography)
     except Exception as e:
         return f"Error downloading paper {arxiv_id}: {str(e)}"
 
