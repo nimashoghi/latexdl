@@ -14,6 +14,10 @@ dependencies = [
     "platformdirs",
     "pydantic",
     "pypandoc-binary",
+]
+
+[project.optional-dependencies]
+mcp = [
     "fastmcp",
     "pydantic-ai",
     "openai",
