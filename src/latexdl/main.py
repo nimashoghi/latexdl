@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import logging
+import os
 import re
 import tarfile
 import urllib.parse
@@ -145,6 +146,64 @@ def _find_main_latex_file(directory: Path) -> Path | None:
     return potential_main_files[0][0] if potential_main_files else None
 
 
+async def robust_download_paper(
+    arxiv_id: str, include_bibliography: bool = False
+) -> str:
+    """Download paper with robust fallback behavior.
+
+    Tries to convert to markdown first, falls back to LaTeX if markdown conversion
+    fails and fallback is enabled via environment variable.
+
+    Args:
+        arxiv_id: The arXiv ID of the paper to download
+        include_bibliography: Whether to include the bibliography section
+
+    Returns:
+        The paper content (markdown if successful, LaTeX if fallback enabled)
+
+    Raises:
+        Exception: If both markdown and LaTeX downloads fail, or if fallback is disabled
+    """
+
+    try:
+        # First, try to convert to markdown
+        content, _metadata = convert_arxiv_latex(
+            arxiv_id,
+            markdown=True,
+            include_bibliography=include_bibliography,
+            include_metadata=True,
+            use_cache=True,
+            parse_citations=True,
+        )
+        return content
+    except Exception as markdown_error:
+        # If markdown conversion fails and fallback is enabled, try LaTeX
+        if os.getenv("ARXIV_FALLBACK_TO_LATEX", "true").lower() in (
+            "true",
+            "1",
+            "yes",
+            "on",
+        ):
+            try:
+                content, _metadata = convert_arxiv_latex(
+                    arxiv_id,
+                    markdown=False,  # Get raw LaTeX
+                    include_bibliography=include_bibliography,
+                    include_metadata=True,
+                    use_cache=True,
+                    parse_citations=True,
+                )
+                return content
+            except Exception as latex_error:
+                # Both conversions failed
+                raise Exception(
+                    "Both markdown and LaTeX conversion failed. "
+                    f"Markdown error: {markdown_error}. LaTeX error: {latex_error}"
+                )
+        # Fallback is disabled, re-raise the original markdown error
+        raise markdown_error
+
+
 def convert_arxiv_latex(
     arxiv_id_or_url: str,
     *,
@@ -158,7 +217,6 @@ def convert_arxiv_latex(
     pandoc_timeout: int = 60,
     parse_citations: bool = True,
     preserve_macros: bool = False,
-    parse_citations_separately: bool = False,
 ) -> tuple[str, ArxivMetadata | None]:
     """
     Convert an arXiv paper to expanded LaTeX or markdown.
@@ -169,13 +227,12 @@ def convert_arxiv_latex(
         redownload_existing: Whether to redownload if archives already exist
         use_cache: Whether to use cached files if they exist
         keep_comments: Whether to keep comments in the expanded LaTeX
-        include_bibliography: Whether to include bibliography content
+        include_bibliography: Whether to include bibliography content in the output text
         include_metadata: Whether to include paper metadata (title, authors, etc.)
         working_dir: Optional working directory for temporary files. If None, uses the default cache directory.
         pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
-        parse_citations: Whether to parse citations in the LaTeX file
+        parse_citations: Whether to parse citations into structured metadata (independent of include_bibliography)
         preserve_macros: Whether to preserve LaTeX macros in the converted markdown.
-        parse_citations_separately: If True, parse citations even when include_bibliography is False
     Returns:
         The expanded LaTeX or converted markdown content as a string, and
         the metadata as an ArxivMetadata object (if `include_metadata` is True).
@@ -185,8 +242,6 @@ def convert_arxiv_latex(
         RuntimeError: If the main LaTeX file cannot be found
         ValueError: If the arXiv ID format is invalid
     """
-    if parse_citations and not include_bibliography and not parse_citations_separately:
-        raise ValueError("Cannot parse citations without including bibliography")
     if parse_citations and not include_metadata:
         raise ValueError("Cannot parse citations without including metadata")
 
@@ -234,33 +289,27 @@ def convert_arxiv_latex(
         )
         content = metadata_content + content
 
-    # Add bibliography if requested
-    if include_bibliography and (
-        bib_content := detect_and_collect_bibtex(
+    # Process bibliography and citations
+    if include_bibliography or parse_citations:
+        bib_content = detect_and_collect_bibtex(
             src_dir,
             expanded_latex,
             main_tex_path=main_file,
             markdown=markdown,
             parse_citations=parse_citations,
         )
-    ):
-        sep = "\n\n# References\n\n" if markdown else "\n\nREFERENCES\n\n"
-        content += sep + bib_content.references_str
 
-        if parse_citations:
-            metadata = dataclasses.replace(metadata, citations=bib_content.citations)
-    elif parse_citations_separately and (
-        bib_content := detect_and_collect_bibtex(
-            src_dir,
-            expanded_latex,
-            main_tex_path=main_file,
-            markdown=markdown,
-            parse_citations=True,
-        )
-    ):
-        # Parse citations but don't include bibliography in output
-        if parse_citations:
-            metadata = dataclasses.replace(metadata, citations=bib_content.citations)
+        if bib_content:
+            # Add bibliography text to output if requested
+            if include_bibliography:
+                sep = "\n\n# References\n\n" if markdown else "\n\nREFERENCES\n\n"
+                content += sep + bib_content.references_str
+
+            # Add citation metadata if requested
+            if parse_citations:
+                metadata = dataclasses.replace(
+                    metadata, citations=bib_content.citations
+                )
 
     if use_cache:
         save_cache(temp_dir, content, metadata)
@@ -281,7 +330,6 @@ def batch_convert_arxiv_papers(
     pandoc_timeout: int = 60,
     parse_citations: bool = True,
     preserve_macros: bool = False,
-    parse_citations_separately: bool = False,
 ) -> dict[str, tuple[str, ArxivMetadata | None]]:
     """
     Convert multiple arXiv papers to expanded LaTeX or markdown.
@@ -292,14 +340,13 @@ def batch_convert_arxiv_papers(
         redownload_existing: Whether to redownload if archives already exist
         use_cache: Whether to use cached files if they exist
         keep_comments: Whether to keep comments in the expanded LaTeX
-        include_bibliography: Whether to include bibliography content
+        include_bibliography: Whether to include bibliography content in the output text
         include_metadata: Whether to include paper metadata (title, authors, etc.)
         show_progress: Whether to show a progress bar
         working_dir: Optional working directory for caching files. If None, uses the default cache directory.
         pandoc_timeout: Maximum execution time for pandoc in seconds. Defaults to 60 seconds (1 minute).
-        parse_citations: Whether to parse citations in the LaTeX file
+        parse_citations: Whether to parse citations into structured metadata (independent of include_bibliography)
         preserve_macros: Whether to preserve LaTeX macros in the converted markdown.
-        parse_citations_separately: If True, parse citations even when include_bibliography is False
     Returns:
         Dictionary mapping arXiv IDs to their converted content and metadata
     """
@@ -327,7 +374,6 @@ def batch_convert_arxiv_papers(
             pandoc_timeout=pandoc_timeout,
             parse_citations=parse_citations,
             preserve_macros=preserve_macros,
-            parse_citations_separately=parse_citations_separately,
         )
 
         results[arxiv_id] = (content, metadata)
