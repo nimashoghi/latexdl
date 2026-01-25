@@ -8,8 +8,10 @@ LaTeX files from arXiv to Markdown.
 from __future__ import annotations
 
 from ._types import ArxivMetadata as ArxivMetadata
+from ._types import ConversionResult as ConversionResult
 from .main import batch_convert_arxiv_papers as batch_convert_arxiv_papers
 from .main import convert_arxiv_latex as convert_arxiv_latex
+from .main import convert_arxiv_to_directory as convert_arxiv_to_directory
 from .main import download_arxiv_source as download_arxiv_source
 from .main import robust_download_paper as robust_download_paper
 

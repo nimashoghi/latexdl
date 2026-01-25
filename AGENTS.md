@@ -48,19 +48,24 @@ uv run ruff format src/
 3. Convert to Markdown via `pandoc` (`strip.py`) if requested
 4. Collect BibTeX references (`_bibtex.py`)
 5. Attach arXiv metadata (`_metadata.py`)
+6. Copy referenced image assets to output directory (`_assets.py`)
 
 **Key modules**:
 
 - `main.py`: CLI and orchestration logic; `convert_arxiv_latex()` is the main API function
 - `mcp.py`: FastMCP server exposing `read_paper` and `get_paper_structure` tools
 - `_cache.py`: Pydantic-based caching in platform-specific user cache directory
+- `_assets.py`: Asset copying (parses image references and copies files to output)
+- `_types.py`: Type definitions including `ArxivMetadata` and `ConversionResult`
 
 **Public API** (exported from `__init__.py`):
 
-- `convert_arxiv_latex()`: Convert single paper
+- `convert_arxiv_latex()`: Convert single paper (returns content + metadata)
+- `convert_arxiv_to_directory()`: Convert paper and write to directory with assets
 - `batch_convert_arxiv_papers()`: Convert multiple papers
 - `robust_download_paper()`: Download with fallback behavior
 - `download_arxiv_source()`: Just download and extract source
+- `ConversionResult`: Dataclass with content, metadata, and source_dir
 
 ## Code Style
 

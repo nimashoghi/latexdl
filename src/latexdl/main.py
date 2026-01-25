@@ -13,10 +13,11 @@ import platformdirs
 import requests
 from tqdm import tqdm
 
+from ._assets import copy_assets
 from ._bibtex import detect_and_collect_bibtex
 from ._cache import load_cache, save_cache
 from ._metadata import fetch_arxiv_metadata
-from ._types import ArxivMetadata
+from ._types import ArxivMetadata, ConversionResult
 from .expand import expand_latex_file
 from .strip import check_pandoc_installed, strip
 
@@ -242,6 +243,36 @@ def convert_arxiv_latex(
         RuntimeError: If the main LaTeX file cannot be found
         ValueError: If the arXiv ID format is invalid
     """
+    result = _convert_arxiv_latex_internal(
+        arxiv_id_or_url,
+        markdown=markdown,
+        redownload_existing=redownload_existing,
+        use_cache=use_cache,
+        keep_comments=keep_comments,
+        include_bibliography=include_bibliography,
+        include_metadata=include_metadata,
+        working_dir=working_dir,
+        pandoc_timeout=pandoc_timeout,
+        parse_citations=parse_citations,
+        preserve_macros=preserve_macros,
+    )
+    return result.content, result.metadata
+
+
+def _convert_arxiv_latex_internal(
+    arxiv_id_or_url: str,
+    *,
+    markdown: bool = False,
+    redownload_existing: bool = False,
+    use_cache: bool = False,
+    keep_comments: bool = False,
+    include_bibliography: bool = True,
+    include_metadata: bool = True,
+    working_dir: str | Path | None = None,
+    pandoc_timeout: int = 60,
+    parse_citations: bool = True,
+    preserve_macros: bool = False,
+) -> ConversionResult:
     if parse_citations and not include_metadata:
         raise ValueError("Cannot parse citations without including metadata")
 
@@ -259,14 +290,19 @@ def convert_arxiv_latex(
         log.info(f"Using default cache directory: {working_dir}")
 
     temp_dir = Path(working_dir) / arxiv_id / metadata._arxiv_id_full()
-    if use_cache and (cached_contents := load_cache(temp_dir)) is not None:
-        log.info(f"Using cached content for {arxiv_id}")
-        return cached_contents.paper_contents, cached_contents.metadata
-
     temp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Download and extract
+    # Always download and extract to get source_dir for asset copying
     src_dir = download_arxiv_source(arxiv_id, temp_dir, redownload_existing)
+
+    # Check cache after getting src_dir
+    if use_cache and (cached_contents := load_cache(temp_dir)) is not None:
+        log.info(f"Using cached content for {arxiv_id}")
+        return ConversionResult(
+            content=cached_contents.paper_contents,
+            metadata=cached_contents.metadata,
+            source_dir=src_dir,
+        )
 
     # Find main LaTeX file
     if (main_file := _find_main_latex_file(src_dir)) is None:
@@ -313,7 +349,7 @@ def convert_arxiv_latex(
 
     if use_cache:
         save_cache(temp_dir, content, metadata)
-    return content, metadata
+    return ConversionResult(content=content, metadata=metadata, source_dir=src_dir)
 
 
 def batch_convert_arxiv_papers(
@@ -381,16 +417,89 @@ def batch_convert_arxiv_papers(
     return results
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Download and convert arXiv papers")
-    parser.add_argument("papers", nargs="+", help="arXiv IDs or URLs", type=str)
-    parser.add_argument(
-        "--output",
-        "-o",
-        help="Output directory",
-        type=Path,
-        required=False,
+def convert_arxiv_to_directory(
+    arxiv_id_or_url: str,
+    output_dir: str | Path,
+    *,
+    markdown: bool = True,
+    redownload_existing: bool = False,
+    use_cache: bool = False,
+    keep_comments: bool = False,
+    include_bibliography: bool = True,
+    include_metadata: bool = True,
+    pandoc_timeout: int = 60,
+    preserve_macros: bool = False,
+    force_overwrite: bool = False,
+) -> Path:
+    """Convert an arXiv paper and write it to an output directory with all assets.
+
+    This is the main programmatic API for converting papers with figures.
+
+    Args:
+        arxiv_id_or_url: arXiv ID or URL of the paper
+        output_dir: Directory to write output files (created if doesn't exist)
+        markdown: Whether to convert to markdown (default True)
+        redownload_existing: Whether to redownload if archives already exist
+        use_cache: Whether to use cached files if they exist
+        keep_comments: Whether to keep comments in the expanded LaTeX
+        include_bibliography: Whether to include bibliography content in the output
+        include_metadata: Whether to include paper metadata (title, authors, etc.)
+        pandoc_timeout: Maximum execution time for pandoc in seconds
+        preserve_macros: Whether to preserve LaTeX macros in the converted markdown
+        force_overwrite: Whether to overwrite existing files
+
+    Returns:
+        Path to the generated output file (e.g., output_dir/2103.12345.md)
+
+    Raises:
+        FileExistsError: If output file exists and force_overwrite is False
+        RuntimeError: If the main LaTeX file cannot be found
+        ValueError: If the arXiv ID format is invalid
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Convert the paper
+    result = _convert_arxiv_latex_internal(
+        arxiv_id_or_url,
+        markdown=markdown,
+        redownload_existing=redownload_existing,
+        use_cache=use_cache,
+        keep_comments=keep_comments,
+        include_bibliography=include_bibliography,
+        include_metadata=include_metadata,
+        pandoc_timeout=pandoc_timeout,
+        parse_citations=False,
+        preserve_macros=preserve_macros,
     )
+
+    # Determine output file path
+    arxiv_id = _extract_arxiv_id(arxiv_id_or_url)
+    ext = "md" if markdown else "tex"
+    output_file = output_dir / f"{arxiv_id}.{ext}"
+
+    if output_file.exists() and not force_overwrite:
+        raise FileExistsError(
+            f"Output file {output_file} already exists. "
+            "Use force_overwrite=True to overwrite."
+        )
+
+    # Copy assets from source directory to output directory
+    copy_assets(result.source_dir, output_dir, result.content, markdown=markdown)
+
+    # Write the content file
+    output_file.write_text(result.content, encoding="utf-8")
+    log.info(f"Wrote {output_file}")
+
+    return output_file
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Download and convert an arXiv paper with assets"
+    )
+    parser.add_argument("paper", help="arXiv ID or URL", type=str)
+    parser.add_argument("output_dir", help="Output directory", type=Path)
     parser.add_argument(
         "--cache-dir",
         help=f"Directory to use for caching papers (default: {_get_default_cache_dir()})",
@@ -405,7 +514,7 @@ def main():
     )
     parser.add_argument(
         "--markdown",
-        help="Use pandoc to convert to markdown",
+        help="Use pandoc to convert to markdown (default: True if pandoc installed)",
         action=argparse.BooleanOptionalAction,
         required=False,
     )
@@ -466,45 +575,25 @@ def main():
     if args.markdown is None:
         args.markdown = check_pandoc_installed()
 
-    # Convert the papers
-    results = batch_convert_arxiv_papers(
-        args.papers,
-        markdown=args.markdown,
-        redownload_existing=args.redownload_existing,
-        use_cache=args.use_cache,
-        keep_comments=args.keep_comments,
-        include_bibliography=args.bib,
-        include_metadata=args.metadata,
-        working_dir=args.cache_dir,
-        pandoc_timeout=args.pandoc_timeout,
-        parse_citations=False,
-        preserve_macros=args.preserve_macros,
-    )
-
-    # Handle output based on command-line arguments
-    if args.output:
-        # Create output directory
-        args.output.mkdir(parents=True, exist_ok=True)
-
-        # Write each result to a file
-        for arxiv_id, (content, _) in results.items():
-            ext = "md" if args.markdown else "tex"
-            output_file = args.output / f"{arxiv_id}.{ext}"
-
-            # Check if file exists and handle overwrite
-            if output_file.exists() and not args.force_overwrite:
-                log.info(
-                    f"File {output_file} already exists, skipping (use --force-overwrite to overwrite)"
-                )
-                continue
-
-            with output_file.open("w", encoding="utf-8") as f:
-                f.write(content)  # Write the content part of the tuple
-            log.info(f"Wrote {output_file}")
-    else:
-        # Print to stdout if no output directory specified
-        for arxiv_id, (content, _) in results.items():
-            print(content)
+    try:
+        output_file = convert_arxiv_to_directory(
+            args.paper,
+            args.output_dir,
+            markdown=args.markdown,
+            redownload_existing=args.redownload_existing,
+            use_cache=args.use_cache,
+            keep_comments=args.keep_comments,
+            include_bibliography=args.bib,
+            include_metadata=args.metadata,
+            pandoc_timeout=args.pandoc_timeout,
+            preserve_macros=args.preserve_macros,
+            force_overwrite=args.force_overwrite,
+        )
+        print(f"Output written to: {output_file}")
+    except FileExistsError as e:
+        log.error(str(e))
+        print(f"Error: {e}", file=__import__("sys").stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
