@@ -16,12 +16,19 @@ dependencies = [
     "pypandoc-binary",
 ]
 
-[project.optional-dependencies]
-mcp = [
-    "fastmcp",
-    "pydantic-ai",
-    "openai",
+[dependency-groups]
+dev = [
+    "ipykernel",
+    "rich",
+    "ruff",
+    "basedpyright",
+    "pytest",
+    "hypothesis",
+    "pytest-cov",
 ]
+
+[project.optional-dependencies]
+mcp = ["fastmcp", "pydantic-ai", "openai"]
 
 [project.urls]
 homepage = "https://github.com/nimashoghi/latexdl"
@@ -30,18 +37,9 @@ homepage = "https://github.com/nimashoghi/latexdl"
 latexdl = "latexdl.main:main"
 latexdl-mcp = "latexdl.mcp:main"
 
-[tool.poetry.group.dev.dependencies]
-ipykernel = "*"
-rich = "*"
-ruff = "*"
-basedpyright = "*"
-pytest = "*"
-hypothesis = "*"
-pytest-cov = "*"
-
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.9.13,<0.10.0"]
+build-backend = "uv_build"
 
 [tool.basedpyright]
 typeCheckingMode = "standard"
