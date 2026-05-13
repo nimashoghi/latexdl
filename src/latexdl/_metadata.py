@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
 
 from ._types import ArxivMetadata
 
@@ -12,6 +13,13 @@ except ImportError:
         "The 'arxiv' package is required for metadata extraction. "
         "Please install it with 'pip install arxiv'"
     )
+
+log = logging.getLogger(__name__)
+
+_ARXIV_API_QUERY_URL_FORMATS = (
+    arxiv.Client.query_url_format,
+    "https://arxiv.org/api/query?{}",
+)
 
 
 def fetch_arxiv_metadata(arxiv_id: str) -> ArxivMetadata | None:
@@ -27,27 +35,32 @@ def fetch_arxiv_metadata(arxiv_id: str) -> ArxivMetadata | None:
         An ArxivMetadata object containing the paper metadata, or None if
         the paper could not be found or an error occurred.
 
-    Raises:
-        arxiv.ArxivError: If there's an error communicating with the arXiv API
+    This tries the arxiv package default API host first, then retries against
+    regular arxiv.org if that host is unavailable or rate limited.
     """
-    try:
-        # The arxiv ID might have a version suffix (vN), remove it if present
-        # to ensure we get the latest version
-        base_id = arxiv_id.split("v")[0] if "v" in arxiv_id else arxiv_id
+    # The arxiv ID might have a version suffix (vN), remove it if present
+    # to ensure we get the latest version
+    base_id = arxiv_id.split("v")[0] if "v" in arxiv_id else arxiv_id
 
-        # Query the arXiv API
-        search = arxiv.Search(id_list=[base_id], max_results=1)
+    last_error: Exception | None = None
+    for query_url_format in _ARXIV_API_QUERY_URL_FORMATS:
+        try:
+            paper = _fetch_arxiv_result(base_id, query_url_format)
+        except Exception as e:
+            last_error = e
+            log.info(
+                "Error fetching metadata for arXiv ID %s from %s: %s",
+                arxiv_id,
+                _query_url_hostname(query_url_format),
+                e,
+            )
+            continue
 
-        # Get the first result
-        results = list(search.results())
-        if not results:
-            logging.warning(f"No metadata found for arXiv ID: {arxiv_id}")
+        if paper is None:
+            log.warning(f"No metadata found for arXiv ID: {arxiv_id}")
             return None
 
-        paper = results[0]
-
-        # Extract and structure the metadata
-        metadata = ArxivMetadata(
+        return ArxivMetadata(
             title=paper.title,
             authors=[author.name for author in paper.authors],
             published=paper.published.date() if paper.published else None,
@@ -56,8 +69,17 @@ def fetch_arxiv_metadata(arxiv_id: str) -> ArxivMetadata | None:
             pdf_url=paper.pdf_url,
         )
 
-        return metadata
+    log.warning(f"Error fetching metadata for arXiv ID {arxiv_id}: {last_error}")
+    return None
 
-    except Exception as e:
-        logging.warning(f"Error fetching metadata for arXiv ID {arxiv_id}: {e}")
-        return None
+
+def _fetch_arxiv_result(arxiv_id: str, query_url_format: str) -> arxiv.Result | None:
+    search = arxiv.Search(id_list=[arxiv_id], max_results=1)
+    client = arxiv.Client(page_size=1)
+    client.query_url_format = query_url_format
+    results = list(client.results(search))
+    return results[0] if results else None
+
+
+def _query_url_hostname(query_url_format: str) -> str:
+    return urlparse(query_url_format).netloc
