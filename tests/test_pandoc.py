@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from latexdl._pandoc import recover_figures, recover_tables, source_environments
+from pathlib import Path
+
+from latexdl._pandoc import (
+    ast_to_gfm,
+    preserve_semantic_inlines,
+    recover_figures,
+    recover_tables,
+    source_environments,
+)
 from latexdl.models import Diagnostic
 
 
@@ -58,3 +66,54 @@ def test_dropped_table_gets_visual_and_raw_fallback() -> None:
     assert [block["t"] for block in ast["blocks"]] == ["Header", "Para", "CodeBlock"]
     assert ast["blocks"][-1]["c"][1] == source
     assert diagnostics == []
+
+
+def test_citations_and_math_are_preserved_as_raw_markdown(tmp_path: Path) -> None:
+    ast = {
+        "pandoc-api-version": [1, 23, 1],
+        "meta": {},
+        "blocks": [
+            {
+                "t": "Para",
+                "c": [
+                    {
+                        "t": "Cite",
+                        "c": [
+                            [
+                                {
+                                    "citationId": "smith2020",
+                                    "citationPrefix": [],
+                                    "citationSuffix": [
+                                        {"t": "Str", "c": "p."},
+                                        {"t": "Space"},
+                                        {"t": "Str", "c": "4"},
+                                    ],
+                                    "citationMode": {"t": "NormalCitation"},
+                                },
+                                {
+                                    "citationId": "jones2021",
+                                    "citationPrefix": [],
+                                    "citationSuffix": [],
+                                    "citationMode": {"t": "SuppressAuthor"},
+                                },
+                            ],
+                            [],
+                        ],
+                    },
+                    {"t": "Space"},
+                    {"t": "Math", "c": [{"t": "InlineMath"}, "x+y"]},
+                    {"t": "Space"},
+                    {"t": "Math", "c": [{"t": "DisplayMath"}, "a=b"]},
+                ],
+            }
+        ],
+    }
+
+    assert preserve_semantic_inlines(ast) == (1, 2)
+    markdown = ast_to_gfm(ast, cwd=tmp_path, timeout_seconds=30)
+
+    assert "[@smith2020, p. 4; -@jones2021]" in markdown
+    assert "$x+y$" in markdown
+    assert "$$\na=b\n$$" in markdown
+    assert "$`" not in markdown
+    assert "``` math" not in markdown

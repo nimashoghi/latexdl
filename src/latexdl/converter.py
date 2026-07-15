@@ -21,6 +21,7 @@ from ._pandoc import (
     ast_to_gfm,
     count_ast_nodes,
     latex_to_ast,
+    preserve_semantic_inlines,
     recover_figures,
     recover_tables,
     source_environments,
@@ -201,6 +202,10 @@ def _build_bundle(
         tables_recovered = 0
         ast_figures = 0
         ast_tables = 0
+        citations_expected = 0
+        citations_preserved = 0
+        math_expected = 0
+        math_preserved = 0
         try:
             ast = latex_to_ast(
                 expanded,
@@ -210,10 +215,13 @@ def _build_bundle(
             )
             ast_figures = count_ast_nodes(ast, "Figure")
             ast_tables = count_ast_nodes(ast, "Table")
+            citations_expected = count_ast_nodes(ast, "Cite")
+            math_expected = count_ast_nodes(ast, "Math")
             figures_recovered = recover_figures(
                 ast, source_figures, renderer, diagnostics
             )
             tables_recovered = recover_tables(ast, source_tables, renderer, diagnostics)
+            citations_preserved, math_preserved = preserve_semantic_inlines(ast)
             markdown = ast_to_gfm(
                 ast,
                 cwd=main_file.parent,
@@ -284,6 +292,24 @@ def _build_bundle(
                 message=f"Recovered {tables_recovered} of {tables_expected} tables",
             )
         )
+    if citations_preserved < citations_expected:
+        diagnostics.append(
+            Diagnostic(
+                level=DiagnosticLevel.ERROR,
+                code="incomplete-citations",
+                message=(
+                    f"Preserved {citations_preserved} of {citations_expected} citations"
+                ),
+            )
+        )
+    if math_preserved < math_expected:
+        diagnostics.append(
+            Diagnostic(
+                level=DiagnosticLevel.ERROR,
+                code="incomplete-math",
+                message=f"Preserved {math_preserved} of {math_expected} math expressions",
+            )
+        )
 
     status = (
         ConversionStatus.PARTIAL
@@ -301,6 +327,10 @@ def _build_bundle(
         figures_recovered=figures_recovered,
         tables_expected=tables_expected,
         tables_recovered=tables_recovered,
+        citations_expected=citations_expected,
+        citations_preserved=citations_preserved,
+        math_expected=math_expected,
+        math_preserved=math_preserved,
         options=options,
         assets=manager.records,
         diagnostics=diagnostics,
@@ -375,7 +405,7 @@ def _package_version() -> str:
     try:
         return importlib.metadata.version("latexdl")
     except importlib.metadata.PackageNotFoundError:
-        return "3.0.0"
+        return "3.0.1"
 
 
 def _source_copy_ignore(_directory: str, names: list[str]) -> set[str]:
@@ -465,6 +495,8 @@ def _render_report_markdown(report: ConversionReport) -> str:
         f"- Source SHA-256: `{report.source_sha256}`",
         f"- Figures: {report.figures_recovered}/{report.figures_expected}",
         f"- Tables: {report.tables_recovered}/{report.tables_expected}",
+        f"- Citations: {report.citations_preserved}/{report.citations_expected}",
+        f"- Math: {report.math_preserved}/{report.math_expected}",
         f"- Assets: {len(report.assets)}",
         "",
         "## Diagnostics",

@@ -17,6 +17,7 @@ def test_convert_arxiv_builds_complete_atomic_bundle(
 \usepackage{graphicx}
 \begin{document}
 \section{Result}
+This cites \cite{example} and contains $x+y$.
 \begin{figure}
 \includegraphics{figure}
 \caption{A figure}
@@ -78,12 +79,17 @@ def test_convert_arxiv_builds_complete_atomic_bundle(
     assert result.report.status is ConversionStatus.COMPLETE
     assert result.report.figures_recovered == result.report.figures_expected == 1
     assert result.report.tables_recovered == result.report.tables_expected == 1
+    assert result.report.citations_preserved == result.report.citations_expected == 1
+    assert result.report.math_preserved == result.report.math_expected == 1
     assert (destination / "paper.md").is_file()
     assert (destination / "images" / "figure.png").is_file()
     assert (destination / "raw" / "main.tex").is_file()
     assert (destination / "raw" / "expanded.tex").is_file()
     assert (destination / "conversion.json").is_file()
     assert (destination / "conversion-report.md").is_file()
+    markdown = (destination / "paper.md").read_text()
+    assert "[@example]" in markdown
+    assert "$x+y$" in markdown
 
 
 def test_existing_destination_is_not_touched_without_force(tmp_path: Path) -> None:

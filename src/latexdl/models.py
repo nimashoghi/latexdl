@@ -77,7 +77,7 @@ class ConversionReport(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    schema_version: int = 1
+    schema_version: int = 2
     latexdl_version: str
     status: ConversionStatus
     arxiv_id: str
@@ -88,6 +88,10 @@ class ConversionReport(BaseModel):
     figures_recovered: int
     tables_expected: int
     tables_recovered: int
+    citations_expected: int
+    citations_preserved: int
+    math_expected: int
+    math_preserved: int
     options: dict[str, str | int | bool] = Field(default_factory=dict)
     assets: list[AssetRecord] = Field(default_factory=list)
     diagnostics: list[Diagnostic] = Field(default_factory=list)

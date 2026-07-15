@@ -176,6 +176,114 @@ def count_ast_nodes(ast: PandocNode, node_type: str) -> int:
     return sum(1 for _ in _nodes_of_type(ast.get("blocks", []), node_type))
 
 
+def preserve_semantic_inlines(ast: PandocNode) -> tuple[int, int]:
+    """Materialize citations and math as raw KaTeX-compatible Markdown.
+
+    Pandoc's GFM writer otherwise drops ``Cite`` nodes and renders ``Math``
+    nodes as code spans or fenced ``math`` blocks. Returning raw Markdown
+    nodes preserves citation keys and produces the delimiters used by KaTeX.
+    """
+    preserved = {"citations": 0, "math": 0}
+    _transform_semantic_inlines(ast, preserved)
+    return preserved["citations"], preserved["math"]
+
+
+def _transform_semantic_inlines(value: Any, preserved: dict[str, int]) -> Any:
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            value[index] = _transform_semantic_inlines(child, preserved)
+        return value
+    if not isinstance(value, dict):
+        return value
+
+    node_type = value.get("t")
+    if node_type == "Cite" and (markdown := _citation_markdown(value)) is not None:
+        preserved["citations"] += 1
+        return _raw_markdown(markdown)
+    if node_type == "Math" and (markdown := _math_markdown(value)) is not None:
+        preserved["math"] += 1
+        return _raw_markdown(markdown)
+
+    for key, child in list(value.items()):
+        value[key] = _transform_semantic_inlines(child, preserved)
+    return value
+
+
+def _citation_markdown(node: PandocNode) -> str | None:
+    content = node.get("c")
+    if not isinstance(content, list) or not content or not isinstance(content[0], list):
+        return None
+    segments: list[str] = []
+    for citation in content[0]:
+        if not isinstance(citation, dict):
+            return None
+        citation_id = citation.get("citationId")
+        if not isinstance(citation_id, str) or not citation_id:
+            return None
+        mode = citation.get("citationMode")
+        marker = f"@{citation_id}"
+        if isinstance(mode, dict) and mode.get("t") == "SuppressAuthor":
+            marker = f"-@{citation_id}"
+        prefix = _inline_text(citation.get("citationPrefix"))
+        suffix = _inline_text(citation.get("citationSuffix"))
+        segment = f"{prefix} {marker}".strip() if prefix else marker
+        if suffix:
+            segment = f"{segment}, {suffix}"
+        segments.append(segment)
+    if not segments:
+        return None
+    return f"[{'; '.join(segments)}]"
+
+
+def _inline_text(value: Any) -> str:
+    parts: list[str] = []
+
+    def collect(child: Any) -> None:
+        if isinstance(child, list):
+            for item in child:
+                collect(item)
+            return
+        if not isinstance(child, dict):
+            return
+        node_type = child.get("t")
+        content = child.get("c")
+        if node_type == "Str" and isinstance(content, str):
+            parts.append(content)
+        elif node_type in {"Space", "SoftBreak", "LineBreak"}:
+            parts.append(" ")
+        elif node_type == "Code" and isinstance(content, list) and len(content) == 2:
+            parts.append(str(content[1]))
+        elif node_type == "Math" and isinstance(content, list) and len(content) == 2:
+            parts.append(str(content[1]))
+        elif (
+            node_type == "RawInline" and isinstance(content, list) and len(content) == 2
+        ):
+            parts.append(str(content[1]))
+        else:
+            collect(content)
+
+    collect(value)
+    return re.sub(r"\s+", " ", "".join(parts)).strip()
+
+
+def _math_markdown(node: PandocNode) -> str | None:
+    content = node.get("c")
+    if not isinstance(content, list) or len(content) != 2:
+        return None
+    math_type, expression = content
+    if not isinstance(math_type, dict) or not isinstance(expression, str):
+        return None
+    if math_type.get("t") == "InlineMath":
+        return f"${expression}$"
+    if math_type.get("t") == "DisplayMath":
+        return f"$$\n{expression}\n$$"
+    return None
+
+
+def _raw_markdown(content: str) -> PandocNode:
+    return {"t": "RawInline", "c": ["markdown", content]}
+
+
 def _nodes_of_type(value: Any, node_type: str) -> Iterator[PandocNode]:
     if isinstance(value, dict):
         if value.get("t") == node_type:

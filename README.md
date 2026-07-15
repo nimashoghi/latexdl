@@ -43,7 +43,9 @@ conversion-report.md
 ```
 
 `conversion.json` reports `complete` only when every source figure and table
-was recovered and every media reference resolves to a non-empty local file.
+was recovered, every citation and math expression was preserved, and every
+media reference resolves to a non-empty local file. Inline and display math use
+KaTeX-compatible `$ ... $` and `$$ ... $$` delimiters.
 The command exits with status 2 for a partial bundle, which lets callers choose
 a whole-document fallback instead of silently accepting degraded Markdown.
 
