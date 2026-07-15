@@ -1,7 +1,7 @@
 [project]
 name = "latexdl"
-version = "2.5.0"
-description = ""
+version = "3.0.0"
+description = "Convert arXiv LaTeX sources into complete, auditable Markdown bundles"
 authors = [{ name = "Nima Shoghi", email = "nimashoghi@gmail.com" }]
 requires-python = ">=3.10,<4.0"
 readme = "README.md"
@@ -34,7 +34,7 @@ mcp = ["fastmcp", "pydantic-ai", "openai"]
 homepage = "https://github.com/nimashoghi/latexdl"
 
 [project.scripts]
-latexdl = "latexdl.main:main"
+latexdl = "latexdl.cli:main"
 latexdl-mcp = "latexdl.mcp:main"
 
 [build-system]

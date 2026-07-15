@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -74,16 +73,3 @@ class ArxivMetadata:
 
     def _arxiv_id_full(self):
         return self.entry_id.rsplit("/", 1)[-1]
-
-
-@dataclass(frozen=True)
-class ConversionResult:
-    """Result of converting an arXiv paper.
-
-    Exposes the converted content along with metadata and the source directory
-    containing the extracted arXiv source files (for asset copying).
-    """
-
-    content: str
-    metadata: ArxivMetadata | None
-    source_dir: Path

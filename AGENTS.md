@@ -31,8 +31,9 @@ uv run ruff format src/
 
 ## External Dependencies
 
-- **latexpand**: System tool for LaTeX expansion (install via TeX Live)
-- **pandoc**: For Markdown conversion (bundled via `pypandoc-binary`)
+Run `uv run latexdl doctor` for the authoritative check. Conversion requires
+`latexpand`, `pdflatex`, `pdfcrop`, `pdftocairo`, Ghostscript, and Bubblewrap.
+Pandoc is bundled through `pypandoc-binary`.
 
 ## CLI Entry Points
 
@@ -41,31 +42,37 @@ uv run ruff format src/
 
 ## Architecture
 
-**Core processing flow** (in `main.py`):
+**Core processing flow** (in `converter.py`):
 
-1. Download arXiv source → Extract tarball → Find main .tex file
-2. Expand LaTeX via `latexpand` (`expand.py`)
-3. Convert to Markdown via `pandoc` (`strip.py`) if requested
-4. Collect BibTeX references (`_bibtex.py`)
-5. Attach arXiv metadata (`_metadata.py`)
-6. Copy referenced image assets to output directory (`_assets.py`)
+1. Download a versioned arXiv source archive atomically and extract it safely.
+2. Build from a disposable source copy and expand LaTeX with `latexpand`.
+3. Parse Pandoc JSON, recover empty/dropped figures and tables, then write GFM.
+4. Resolve and rewrite every media target; render vector assets to PNG while
+   preserving originals.
+5. Validate completeness, write structured/human reports, and atomically install
+   the portable bundle.
 
 **Key modules**:
 
-- `main.py`: CLI and orchestration logic; `convert_arxiv_latex()` is the main API function
+- `converter.py`: conversion orchestration and atomic bundle/cache handling
+- `models.py`: public request, result, report, asset, and diagnostic models
+- `cli.py`: `convert` and `doctor` commands
+- `_source.py`: arXiv ID parsing, atomic downloads, and safe archive extraction
+- `_pandoc.py`: Pandoc JSON conversion and figure/table recovery
+- `_commands.py`: killable subprocesses, sandboxing, and tool discovery
 - `mcp.py`: FastMCP server exposing `read_paper` and `get_paper_structure` tools
-- `_cache.py`: Pydantic-based caching in platform-specific user cache directory
-- `_assets.py`: Asset copying (parses image references and copies files to output)
-- `_types.py`: Type definitions including `ArxivMetadata` and `ConversionResult`
+- `_assets.py`: media resolution, conversion, preview rendering, and validation
+- `_types.py`: arXiv metadata and citation types
 
 **Public API** (exported from `__init__.py`):
 
-- `convert_arxiv_latex()`: Convert single paper (returns content + metadata)
-- `convert_arxiv_to_directory()`: Convert paper and write to directory with assets
-- `batch_convert_arxiv_papers()`: Convert multiple papers
-- `robust_download_paper()`: Download with fallback behavior
-- `download_arxiv_source()`: Just download and extract source
-- `ConversionResult`: Dataclass with content, metadata, and source_dir
+- `convert_arxiv(ConversionRequest) -> ConversionResult`
+- `convert_many(Sequence[ConversionRequest]) -> list[ConversionResult]`
+- `ConversionRequest`, `ConversionResult`, `ConversionReport`, `AssetRecord`, and
+  `Diagnostic`
+
+Version 3 is intentionally breaking. Do not reintroduce the tuple- or
+`Path`-returning version 2 APIs as compatibility wrappers.
 
 ## Code Style
 

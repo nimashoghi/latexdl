@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from urllib.parse import urlparse
 
 from ._types import ArxivMetadata
@@ -40,7 +41,7 @@ def fetch_arxiv_metadata(arxiv_id: str) -> ArxivMetadata | None:
     """
     # The arxiv ID might have a version suffix (vN), remove it if present
     # to ensure we get the latest version
-    base_id = arxiv_id.split("v")[0] if "v" in arxiv_id else arxiv_id
+    base_id = re.sub(r"v\d+$", "", arxiv_id)
 
     last_error: Exception | None = None
     for query_url_format in _ARXIV_API_QUERY_URL_FORMATS:

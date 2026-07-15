@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
+
+from ._commands import CommandError, run_command
 
 
 class ExpandError(Exception):
@@ -10,32 +11,28 @@ class ExpandError(Exception):
 
 def expand_latex_file(
     f_in: Path,
+    output_path: Path,
     *,
     keep_comments: bool,
+    timeout_seconds: int,
 ) -> str:
-    """Expand a LaTeX file using latexpand utility."""
-    expanded_file = f_in.parent / f"expanded_{f_in.name}"
-
+    """Expand a LaTeX project without writing into the canonical source tree."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     args = [
         "latexpand",
-        str(f_in.relative_to(f_in.parent)),
+        f_in.name,
         "--output",
-        str(expanded_file.relative_to(f_in.parent)),
+        str(output_path),
     ]
     if keep_comments:
         args.extend(["--keep-comments", "--empty-comments"])
 
     try:
-        result = subprocess.run(
+        run_command(
             args,
-            capture_output=True,
-            text=True,
             cwd=f_in.parent,
+            timeout_seconds=timeout_seconds,
         )
-
-        if result.returncode != 0:
-            raise RuntimeError(f"latexpand failed: {result.stderr}")
-
-        return expanded_file.read_text(encoding="utf-8", errors="ignore")
-    except Exception as e:
-        raise ExpandError(f"Error expanding {f_in}") from e
+        return output_path.read_text(encoding="utf-8", errors="replace")
+    except (CommandError, OSError) as error:
+        raise ExpandError(f"error expanding {f_in}: {error}") from error

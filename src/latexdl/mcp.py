@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import re
+import tempfile
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from typing import Annotated, Any
 
 _OPTIONAL_MCP_PACKAGES = {
@@ -25,12 +28,10 @@ if _missing_optional:
 
 from fastmcp import FastMCP
 
-from .main import convert_arxiv_latex, robust_download_paper
+from .converter import convert_arxiv
+from .models import ConversionRequest
 
 mcp = FastMCP("latexdl")
-
-# Environment variables:
-# - ARXIV_FALLBACK_TO_LATEX: Enable/disable fallback to LaTeX when markdown conversion fails (default: "true")
 
 
 def _parse_markdown_hierarchy(markdown_text: str) -> list[dict[str, Any]]:
@@ -69,70 +70,6 @@ def _parse_markdown_hierarchy(markdown_text: str) -> list[dict[str, Any]]:
 
         if not stack:
             # This is a root-level heading
-            root.append(node)
-        else:
-            # Add as child of the last item in stack
-            stack[-1]["children"].append(node)
-
-        stack.append(node)
-
-    return root
-
-
-def _parse_latex_hierarchy(latex_text: str) -> list[dict[str, Any]]:
-    """Parse LaTeX section commands into a hierarchical structure.
-
-    Args:
-        latex_text: The LaTeX content to parse
-
-    Returns:
-        A list of root-level sections, each with potential nested children
-    """
-    # Map LaTeX section commands to levels
-    section_levels = {
-        "part": 0,
-        "chapter": 1,
-        "section": 2,
-        "subsection": 3,
-        "subsubsection": 4,
-        "paragraph": 5,
-        "subparagraph": 6,
-    }
-
-    # Pattern to match section commands: \section{title} or \section*{title}
-    section_pattern = re.compile(
-        r"\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\{([^}]+)\}",
-        re.MULTILINE,
-    )
-
-    sections = [
-        {
-            "level": section_levels[match.group(1)],
-            "title": match.group(2).strip(),
-        }
-        for match in section_pattern.finditer(latex_text)
-    ]
-
-    if not sections:
-        return []
-
-    # Build hierarchical structure
-    root: list[dict[str, Any]] = []
-    stack: list[dict[str, Any]] = []
-
-    for section in sections:
-        node = {
-            "level": section["level"],
-            "title": section["title"],
-            "children": [],
-        }
-
-        # Find the correct parent by popping from stack until we find appropriate level
-        while stack and stack[-1]["level"] >= section["level"]:
-            stack.pop()
-
-        if not stack:
-            # This is a root-level section
             root.append(node)
         else:
             # Add as child of the last item in stack
@@ -192,7 +129,11 @@ async def read_paper(
         The full text content of the paper (markdown if possible, LaTeX if fallback enabled)
     """
     try:
-        return await robust_download_paper(arxiv_id, include_bibliography)
+        return await asyncio.to_thread(
+            _convert_paper_text,
+            arxiv_id,
+            include_bibliography,
+        )
     except Exception as e:
         return f"Error downloading paper {arxiv_id}: {str(e)}"
 
@@ -217,26 +158,8 @@ async def get_paper_structure(
         XML representation of the paper's section structure
     """
     try:
-        # Try markdown first
-        try:
-            content, metadata = convert_arxiv_latex(
-                arxiv_id,
-                markdown=True,
-                include_bibliography=True,
-                include_metadata=True,
-                use_cache=True,
-            )
-            tree = _parse_markdown_hierarchy(content)
-        except Exception:
-            # Fallback to LaTeX parsing
-            content, metadata = convert_arxiv_latex(
-                arxiv_id,
-                markdown=False,
-                include_bibliography=True,
-                include_metadata=True,
-                use_cache=True,
-            )
-            tree = _parse_latex_hierarchy(content)
+        content = await asyncio.to_thread(_convert_paper_text, arxiv_id, True)
+        tree = _parse_markdown_hierarchy(content)
 
         # Convert to XML
         xml_str = _tree_to_xml(tree, arxiv_id)
@@ -245,6 +168,18 @@ async def get_paper_structure(
 
     except Exception as e:
         return f"Error extracting paper structure for {arxiv_id}: {str(e)}"
+
+
+def _convert_paper_text(arxiv_id: str, include_bibliography: bool) -> str:
+    with tempfile.TemporaryDirectory(prefix="latexdl-mcp-") as directory:
+        result = convert_arxiv(
+            ConversionRequest(
+                paper=arxiv_id,
+                output_dir=Path(directory) / "bundle",
+                include_bibliography=include_bibliography,
+            )
+        )
+        return result.paper_path.read_text(encoding="utf-8")
 
 
 def main():

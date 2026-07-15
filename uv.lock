@@ -1803,7 +1803,7 @@ wheels = [
 
 [[package]]
 name = "latexdl"
-version = "2.4.0b5"
+version = "3.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "arxiv" },
