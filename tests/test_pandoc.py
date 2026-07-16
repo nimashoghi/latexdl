@@ -4,6 +4,7 @@ from pathlib import Path
 
 from latexdl._pandoc import (
     ast_to_gfm,
+    count_ast_nodes,
     preserve_semantic_inlines,
     recover_figures,
     recover_tables,
@@ -21,6 +22,26 @@ def _empty_figure() -> dict:
             [],
         ],
     }
+
+
+def test_count_ast_nodes_includes_document_metadata() -> None:
+    ast = {
+        "meta": {
+            "title": {
+                "t": "MetaInlines",
+                "c": [{"t": "Math", "c": [{"t": "InlineMath"}, "x+y"]}],
+            }
+        },
+        "blocks": [
+            {
+                "t": "Para",
+                "c": [{"t": "Math", "c": [{"t": "DisplayMath"}, "a=b"]}],
+            }
+        ],
+    }
+
+    assert count_ast_nodes(ast, "Math") == 2
+    assert preserve_semantic_inlines(ast) == (0, 2)
 
 
 def test_source_environments_handles_starred_variants() -> None:

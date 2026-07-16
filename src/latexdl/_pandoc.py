@@ -173,7 +173,7 @@ def recover_tables(
 
 def count_ast_nodes(ast: PandocNode, node_type: str) -> int:
     """Count Pandoc nodes of one type recursively."""
-    return sum(1 for _ in _nodes_of_type(ast.get("blocks", []), node_type))
+    return sum(1 for _ in _nodes_of_type(ast, node_type))
 
 
 def preserve_semantic_inlines(ast: PandocNode) -> tuple[int, int]:
