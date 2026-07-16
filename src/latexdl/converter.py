@@ -264,8 +264,7 @@ def _build_bundle(
                         f"{bibliography.references_str.strip()}\n"
                     )
 
-        if not markdown.endswith("\n"):
-            markdown += "\n"
+        markdown = _normalize_markdown(markdown)
         (staging / "paper.md").write_text(markdown, encoding="utf-8")
         unresolved_media = manager.validate_markdown(markdown)
 
@@ -345,6 +344,10 @@ def _build_bundle(
         encoding="utf-8",
     )
     return report
+
+
+def _normalize_markdown(markdown: str) -> str:
+    return "\n".join(line.rstrip() for line in markdown.splitlines()) + "\n"
 
 
 def _find_main_latex_file(directory: Path) -> Path | None:

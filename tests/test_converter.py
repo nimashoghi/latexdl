@@ -4,6 +4,16 @@ from pathlib import Path
 
 from latexdl import ConversionRequest, ConversionStatus, convert_arxiv
 from latexdl._source import SourceBundle
+from latexdl.converter import _normalize_markdown
+
+
+def test_markdown_normalization_removes_trailing_whitespace() -> None:
+    markdown = "# Heading \n\ntext\t \n\n```latex\nvalue \t\n```\n"
+
+    normalized = _normalize_markdown(markdown)
+
+    assert normalized == "# Heading\n\ntext\n\n```latex\nvalue\n```\n"
+    assert all(line == line.rstrip() for line in normalized.splitlines())
 
 
 def test_convert_arxiv_builds_complete_atomic_bundle(
